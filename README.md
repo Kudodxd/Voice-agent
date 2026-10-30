@@ -94,6 +94,9 @@ Override nhanh từ CLI: `-o agent.read.top_k=50 backends.decoder.kwargs.num_bea
 
 ## Website trực quan hóa
 
+Bản online: https://kudodxd.github.io/Voice-agent/ (GitHub Pages, tự deploy `site/` mỗi khi `site/` thay đổi trên `main`
+qua `.github/workflows/pages.yml`; cần bật một lần: Settings → Pages → Source: **GitHub Actions**).
+
 `site/index.html` là một trang tĩnh (không cần build, mở trực tiếp được cả từ `file://`) trình bày dự án:
 sơ đồ vòng lặp agent (bấm vào từng khối để xem file và tham số), replay từng phiên (memory sau mỗi talk,
 quyết định của cổng ghi, từng utterance B0 so với P), playground chỉnh ngưỡng cổng ghi trên các ứng viên đã log,
