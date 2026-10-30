@@ -8,6 +8,7 @@ runs/
 runs_toy/
 __pycache__/
 *.egg-info/
+!src/vagent/data/
 
 *.log
 *.def
