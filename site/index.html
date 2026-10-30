@@ -1,0 +1,1404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CSJ Voice Agent</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Training-free cross-session rare-word memory for Japanese ASR on CSJ: how it works, a session replay, and evaluation output.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;600;700&family=M+PLUS+1+Code:wght@400;500;600&family=Zen+Kaku+Gothic+New:wght@700&display=swap">
+<style>
+/* Layout: one 1120px column; each topic is a full-width band (hairline on top) holding a heading block and one working panel. */
+:root {
+  --bg: #f3f4f8;
+  --surface: #ffffff;
+  --sunk: #eceef4;
+  --ink: #151a2b;
+  --ink-2: #4a5068;
+  --muted: #727990;
+  --line: #e0e3eb;
+  --line-2: #c5cad8;
+  --accent: #2f3fa8;
+  --accent-wash: #e6e9f9;
+  --on-accent: #ffffff;
+  --good: #11743a;
+  --good-wash: #e1f2e6;
+  --bad: #b8322f;
+  --bad-wash: #fbe4e2;
+  --warn: #8a5a00;
+  --warn-wash: #fbf0d6;
+  /* chart series (validated categorical order) + neutral reference */
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --s0: #898781;
+  --on-fill: #ffffff;
+  --on-fill-light: #0b0b0b;
+  --f-display: "Zen Kaku Gothic New", "IBM Plex Sans JP", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans JP", "Hiragino Sans", "Yu Gothic", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "M PLUS 1 Code", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1120; --surface: #161a2b; --sunk: #1e2337; --ink: #eceef6; --ink-2: #b4b9cd; --muted: #8b91a8;
+    --line: #272c41; --line-2: #3b4159; --accent: #9aa6ff; --accent-wash: #242b52; --on-accent: #0e1120;
+    --good: #5fcf7e; --good-wash: #15301f; --bad: #f2837c; --bad-wash: #3b1c1d; --warn: #e6b450; --warn-wash: #352a12;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s0: #898781;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1120; --surface: #161a2b; --sunk: #1e2337; --ink: #eceef6; --ink-2: #b4b9cd; --muted: #8b91a8;
+  --line: #272c41; --line-2: #3b4159; --accent: #9aa6ff; --accent-wash: #242b52; --on-accent: #0e1120;
+  --good: #5fcf7e; --good-wash: #15301f; --bad: #f2837c; --bad-wash: #3b1c1d; --warn: #e6b450; --warn-wash: #352a12;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s0: #898781;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-behavior: smooth; scroll-padding-top: 64px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.65 var(--f-body); -webkit-font-smoothing: antialiased; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+a { color: var(--accent); }
+code, .mono { font-family: var(--f-mono); font-size: .92em; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* nav */
+.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+.nav .wrap { display: flex; align-items: center; gap: 18px; height: 52px; }
+.brand { font: 700 15px/1 var(--f-display); color: var(--ink); text-decoration: none; white-space: nowrap; }
+.nav-links { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.nav-links::-webkit-scrollbar { display: none; }
+.nav-links a { color: var(--ink-2); text-decoration: none; font-size: 13px; padding: 6px 10px; border-radius: 6px; white-space: nowrap; }
+.nav-links a:hover { background: var(--sunk); color: var(--ink); }
+
+/* hero */
+.hero { padding-block: 52px 44px; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 44px; align-items: start; }
+@media (max-width: 880px) { .hero-grid { grid-template-columns: 1fr; gap: 28px; } }
+.eyebrow { font: 500 12px/1 var(--f-mono); letter-spacing: .08em; color: var(--accent); }
+h1 { font: 700 clamp(30px, 4.4vw, 44px)/1.18 var(--f-display); letter-spacing: -.005em; margin: 14px 0 16px; text-wrap: balance; }
+.lead { font-size: 17px; color: var(--ink-2); max-width: 60ch; margin: 0; }
+.steps3 { list-style: none; padding: 0; margin: 26px 0 0; display: grid; gap: 14px; counter-reset: s; }
+.steps3 li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; }
+.steps3 li::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--accent); color: var(--accent); font: 600 13px/1 var(--f-mono); }
+.steps3 b { display: block; font-weight: 600; }
+.steps3 span { color: var(--ink-2); font-size: 14px; }
+.prov { margin-top: 24px; padding: 12px 14px; border-radius: 10px; background: var(--sunk); font-size: 13.5px; color: var(--ink-2); max-width: 62ch; }
+.example { padding: 18px 20px; }
+.example-h { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+.example-h h3 { font-size: 14px; }
+.example-note { font-size: 13px; color: var(--ink-2); margin: 12px 0 0; }
+
+/* bands */
+.band { padding-block: 60px; border-top: 1px solid var(--line); }
+.sec-head { display: grid; gap: 10px; margin-bottom: 26px; max-width: 780px; }
+.kicker { display: flex; align-items: baseline; gap: 10px; color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.kicker .jp { font: 700 17px/1 var(--f-display); letter-spacing: .12em; color: var(--accent); text-transform: none; }
+h2 { font: 700 clamp(22px, 3vw, 29px)/1.28 var(--f-display); margin: 0; text-wrap: balance; }
+h3 { font: 600 15.5px/1.35 var(--f-body); margin: 0; }
+.sec-head p { margin: 0; color: var(--ink-2); max-width: 70ch; }
+.src { font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
+.src code { color: var(--ink-2); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; min-width: 0; }
+.stack { display: grid; gap: 16px; }
+.empty { color: var(--muted); font-size: 14px; margin: 0; }
+.sub-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin: 36px 0 12px; }
+.sub-h p { margin: 0; color: var(--ink-2); font-size: 13.5px; max-width: 70ch; }
+
+/* controls */
+.seg { display: inline-flex; flex-wrap: wrap; gap: 3px; padding: 3px; background: var(--sunk); border-radius: 9px; }
+.seg button { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--ink-2); padding: 5px 12px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line-2); }
+.btn { font: inherit; font-size: 13px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); padding: 5px 12px; border-radius: 8px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: default; border-color: var(--line-2); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 12.5px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink-2); padding: 3px 10px; border-radius: 999px; cursor: pointer; }
+.chip[aria-pressed="true"] { border-color: var(--accent); color: var(--ink); background: var(--accent-wash); }
+.chip[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.ctlrow { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
+.ctlrow > label, .ctl-lab { font-size: 12.5px; color: var(--muted); }
+select, input[type="text"] { font: inherit; font-size: 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 10px; max-width: 100%; }
+input[type="text"].mono { font-family: var(--f-mono); }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.check { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
+
+/* pills / keys */
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 500; line-height: 1.5; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.good { background: var(--good-wash); color: var(--good); }
+.pill.bad { background: var(--bad-wash); color: var(--bad); }
+.pill.new { background: var(--accent-wash); color: var(--accent); }
+.pill.warn { background: var(--warn-wash); color: var(--warn); }
+.pill.mute { background: var(--sunk); color: var(--ink-2); }
+.key { display: inline-block; width: 14px; height: 3px; border-radius: 2px; flex: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend svg { flex: none; }
+
+/* tables */
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font-weight: 600; color: var(--ink-2); font-size: 12px; background: var(--sunk); white-space: nowrap; }
+th button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+th button::after { content: attr(data-dir); margin-left: 4px; color: var(--accent); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+tr.hl td { background: var(--accent-wash); }
+tr.grp td { background: var(--bg); font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding-block: 6px; }
+td.diff { background: var(--warn-wash); color: var(--ink); }
+.cellbar { display: grid; grid-template-columns: auto 56px; gap: 8px; align-items: center; justify-content: end; }
+.cellbar .bar { height: 4px; background: var(--sunk); border-radius: 2px; position: relative; }
+.cellbar .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--ink-2); opacity: .55; }
+td.best { font-weight: 700; }
+details.tv { margin-top: 10px; }
+details.tv summary { cursor: pointer; font-size: 13px; color: var(--accent); width: max-content; }
+details.tv .tbl-wrap { margin-top: 10px; }
+
+/* diff text */
+.txt { font-size: 15px; line-height: 1.75; word-break: break-all; min-width: 0; }
+.rare { box-shadow: inset 0 -2px 0 var(--accent); }
+.err { background: var(--bad-wash); color: var(--bad); border-radius: 3px; }
+.del { color: var(--bad); text-decoration: line-through; font-size: .8em; opacity: .8; }
+.lines { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 4px 10px; align-items: baseline; }
+.lab { font: 500 11px/1.4 var(--f-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding-top: 4px; }
+.ctc { font-family: var(--f-mono); font-size: 13.5px; color: var(--ink-2); }
+.hw { display: inline-flex; gap: 6px; align-items: baseline; border: 1px solid var(--line-2); border-radius: 6px; padding: 1px 7px; font-size: 13px; background: var(--surface); }
+.hw small { font-family: var(--f-mono); color: var(--muted); font-size: 11.5px; }
+
+/* tooltip */
+.tip { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; line-height: 1.5; box-shadow: 0 6px 24px rgb(0 0 0 / .16); max-width: 300px; }
+.tip-t { color: var(--muted); font-size: 11.5px; margin-bottom: 3px; }
+.tip-r { display: flex; align-items: center; gap: 8px; }
+.tip-r b { font-variant-numeric: tabular-nums; font-weight: 600; }
+.tip-r span { color: var(--ink-2); }
+
+/* charts */
+.chart { display: block; max-width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis { stroke: var(--line-2); stroke-width: 1; }
+.chart .tick { fill: var(--muted); font-size: 11px; font-family: var(--f-body); font-variant-numeric: tabular-nums; }
+.chart .alab { fill: var(--ink-2); font-size: 11.5px; font-family: var(--f-body); }
+.chart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .dot { stroke: var(--surface); stroke-width: 2; }
+.chart .cross { stroke: var(--line-2); stroke-width: 1; }
+.chart .zone { fill: var(--accent); opacity: .07; }
+.chart .thresh { stroke: var(--accent); stroke-width: 1.5; }
+.chart .ci { stroke: var(--ink-2); stroke-width: 2; stroke-linecap: round; }
+.chart .rowlab { fill: var(--ink); font-size: 12.5px; font-family: var(--f-body); }
+.multi { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+.mchart { padding: 14px 14px 8px; }
+.mchart-h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 6px; }
+.mchart-h h3 { font-size: 13.5px; }
+.mchart-h small { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+
+/* diagram */
+.dg-wrap { overflow-x: auto; }
+.dg { display: block; width: 100%; min-width: 760px; height: auto; }
+.dg .bandbg { fill: var(--sunk); }
+.dg .bandlab { fill: var(--muted); font: 600 11px var(--f-body); letter-spacing: .08em; }
+.dg .bandsub { fill: var(--muted); font: 11.5px var(--f-body); }
+.dg .edge { stroke: var(--line-2); stroke-width: 1.5; fill: none; }
+.dg .edge.fb { stroke-dasharray: 5 4; }
+.dg .ah { fill: var(--line-2); }
+.dg .elab { fill: var(--ink-2); font: 11px var(--f-body); paint-order: stroke; stroke: var(--sunk); stroke-width: 4px; stroke-linejoin: round; }
+.dg .node { cursor: pointer; outline: none; }
+.dg .node rect { fill: var(--surface); stroke: var(--line-2); stroke-width: 1; }
+.dg .node:hover rect { stroke: var(--accent); }
+.dg .node:focus-visible rect { stroke: var(--accent); stroke-width: 2.5; }
+.dg .node.on rect { stroke: var(--accent); stroke-width: 2; fill: var(--accent-wash); }
+.dg .nt { fill: var(--ink); font: 600 13.5px var(--f-body); }
+.dg .ns { fill: var(--muted); font: 11px var(--f-mono); }
+.loop-grid { display: grid; gap: 16px; }
+.narrow-only { display: none; }
+@media (max-width: 800px) { .narrow-only { display: block; } }
+.detail { display: grid; gap: 10px; }
+.detail p { margin: 0; color: var(--ink-2); max-width: 78ch; }
+.files { display: flex; flex-wrap: wrap; gap: 6px; }
+.files code { background: var(--sunk); padding: 2px 8px; border-radius: 6px; font-size: 12.5px; }
+.knobs { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; font-size: 13.5px; }
+.knobs dt code { color: var(--accent); }
+.knobs dd { margin: 0; color: var(--ink-2); }
+
+/* replay */
+.rp-bar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; justify-content: space-between; }
+.rp-steps { display: flex; gap: 6px; flex-wrap: wrap; }
+.rp-step { display: grid; gap: 1px; text-align: left; font: inherit; color: var(--ink); border: 1px solid var(--line-2); background: var(--surface); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+.rp-step b { font: 600 13px/1.3 var(--f-mono); }
+.rp-step small { font: 11px/1.3 var(--f-mono); color: var(--muted); }
+.rp-step[aria-current="step"] { border-color: var(--accent); background: var(--accent-wash); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.tile { padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.tile .l { font-size: 12.5px; color: var(--muted); }
+.tile .v { font: 600 24px/1.25 var(--f-body); }
+.tile .d { font-size: 12.5px; color: var(--ink-2); }
+.rp-cols { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 920px) { .rp-cols { grid-template-columns: 1fr; } }
+.panel-h { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; margin-bottom: 10px; }
+.panel-h small { color: var(--muted); font-size: 12px; }
+.mem th, .mem td { padding: 6px 9px; }
+.mem td.num { white-space: nowrap; }
+.surf { font-weight: 500; white-space: nowrap; }
+.rd { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.pruned { margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+.pruned s { color: var(--muted); }
+.dec { display: grid; gap: 2px; }
+.dec-row { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(64px, 1fr) minmax(64px, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.dec-row:last-child { border-bottom: 0; }
+.dec-head { font-size: 11.5px; color: var(--muted); padding-top: 0; }
+.verdict { display: grid; justify-items: end; gap: 2px; }
+.verdict small { font-size: 11px; color: var(--muted); white-space: nowrap; }
+@media (max-width: 560px) { .dec-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; } .dec-c { grid-column: 1 / -1; } }
+.meterbox { display: grid; gap: 3px; font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.meter { position: relative; height: 6px; background: var(--sunk); border-radius: 3px; }
+.meter i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--accent); }
+.meter i.below { background: var(--bad); }
+.meter u { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink); }
+.utts { display: grid; gap: 10px; }
+.utt { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; background: var(--surface); }
+.utt-h { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+
+/* gate */
+.gate-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 920px) { .gate-grid { grid-template-columns: 1fr; } }
+.sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 22px; }
+.sliders label { display: grid; gap: 2px; font-size: 13px; color: var(--ink-2); }
+.sliders .row { display: flex; justify-content: space-between; gap: 8px; }
+.sliders output { font: 600 13px var(--f-mono); color: var(--ink); }
+
+/* fuzzy */
+.fz-inputs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; gap: 12px; align-items: end; }
+@media (max-width: 720px) { .fz-inputs { grid-template-columns: 1fr; } }
+.fz-inputs label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); min-width: 0; }
+.fz-scroll { overflow-x: auto; padding: 4px 2px 8px; }
+.fz-grid { display: grid; gap: 3px; font-family: var(--f-mono); width: max-content; }
+.fz-c { width: 26px; height: 28px; display: grid; place-items: center; border-radius: 4px; font-size: 14px; }
+.fz-hay { background: var(--sunk); color: var(--ink); }
+.fz-hay.win { background: var(--accent); color: var(--on-accent); }
+.fz-hay.hov { box-shadow: inset 0 0 0 2px var(--s2); }
+.fz-s { font-size: 10px; cursor: default; }
+.fz-s.best { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fz-l { font: 500 11px var(--f-body); color: var(--muted); display: flex; align-items: center; padding-right: 8px; white-space: nowrap; }
+.fz-out { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 14px; }
+.fz-out .big { font: 600 22px/1.2 var(--f-body); }
+.ramp { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.ramp i { width: 90px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--sunk), var(--s1)); }
+
+/* pipeline + code */
+.pipe { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: p -1; }
+.pipe li { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; position: relative; padding-bottom: 22px; }
+.pipe li::before { counter-increment: p; content: counter(p); display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface); border: 1.5px solid var(--line-2); font: 600 13px/1 var(--f-mono); color: var(--ink-2); position: relative; z-index: 1; }
+.pipe li::after { content: ""; position: absolute; left: 16px; top: 32px; bottom: 0; width: 1.5px; background: var(--line-2); }
+.pipe li:last-child::after { display: none; }
+.pipe li:last-child { padding-bottom: 0; }
+.pipe h3 { font-size: 15px; padding-top: 5px; }
+.pipe p { margin: 2px 0 6px; color: var(--ink-2); font-size: 14px; max-width: 74ch; }
+.cmd { display: block; overflow-x: auto; white-space: pre; background: var(--sunk); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; color: var(--ink); }
+.out { font-size: 12.5px; color: var(--muted); }
+.code-row td { padding-block: 6px; }
+.code-row .doc { color: var(--ink-2); font-size: 13px; min-width: 260px; }
+.lbar { display: grid; grid-template-columns: 34px 90px; gap: 8px; align-items: center; justify-content: end; }
+.lbar i { display: block; height: 4px; border-radius: 2px; background: var(--accent); opacity: .6; }
+footer { border-top: 1px solid var(--line); padding-block: 28px 40px; color: var(--muted); font-size: 13px; }
+footer p { margin: 0 0 6px; max-width: 80ch; }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top">csj-voice-agent</a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#loop">How it works</a>
+      <a href="#replay">Replay</a>
+      <a href="#gate">Write gate</a>
+      <a href="#verify">Acoustic check</a>
+      <a href="#systems">Systems</a>
+      <a href="#results">Results</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#code">Code</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <div class="eyebrow">TRAINING-FREE · CSJ · JAPANESE ASR</div>
+        <h1>A voice agent that remembers rare words across sessions</h1>
+        <p class="lead">The agent finds rare words in its own transcripts without labels, writes them to memory only when a kana CTC model hears them too, and offers them back to the decoder in later talks after the same acoustic check.</p>
+        <ol class="steps3">
+          <li><div><b>Detect</b><span>Rare units in each hypothesis: UniDic nouns, compounds merged, outside the 5,000 most frequent units of CSJ train.</span></div></li>
+          <li><div><b>Write</b><span>Kept only when the CTC agrees: reading support ≥ 0.85, CTC confidence ≥ 0.6, heard in at least 2 utterances of the talk.</span></div></li>
+          <li><div><b>Recall</b><span>In later talks an entry reaches the decoder only if its reading is found in the CTC kana (fuzzy ratio ≥ 0.8), top 30 by score.</span></div></li>
+        </ol>
+        <div class="prov" id="prov"></div>
+      </div>
+      <div class="panel example" id="hero-example" hidden></div>
+    </div>
+  </section>
+
+  <section class="band" id="loop">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker"><span class="jp">仕組み</span>How it works</div>
+        <h2>One talk through the agent</h2>
+        <p>Every utterance runs through the top row. When the talk ends, the write gate decides what enters memory, and memory carries over into the next talk. Select a block to see its code and settings.</p>
+      </div>
+      <div class="panel loop-grid">
+        <div class="dg-wrap">
+          <svg class="dg" viewBox="0 0 960 400" role="group" aria-label="Agent loop: per-utterance read and decode, end-of-session write">
+            <defs>
+              <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L8,4 L0,8 z" class="ah"/>
+              </marker>
+            </defs>
+            <rect class="bandbg" x="8" y="10" width="944" height="178" rx="12"/>
+            <text class="bandlab" x="26" y="34">EACH UTTERANCE</text>
+            <rect class="bandbg" x="8" y="204" width="944" height="186" rx="12"/>
+            <text class="bandlab" x="26" y="230">END OF EACH TALK</text>
+            <text class="bandsub" x="26" y="248">memory carries into talk t+1</text>
+
+            <!-- edges -->
+            <path class="edge" d="M132,115 H184" marker-end="url(#ah)"/>
+            <text class="elab" x="158" y="106" text-anchor="middle">audio</text>
+            <path class="edge" d="M322,115 H374" marker-end="url(#ah)"/>
+            <text class="elab" x="348" y="106" text-anchor="middle">kana</text>
+            <path class="edge" d="M520,115 H582" marker-end="url(#ah)"/>
+            <text class="elab" x="551" y="106" text-anchor="middle">hotwords</text>
+            <path class="edge" d="M728,115 H780" marker-end="url(#ah)"/>
+            <text class="elab" x="754" y="106" text-anchor="middle">hyp</text>
+            <path class="edge" d="M256,78 V56 H861 V72" marker-end="url(#ah)"/>
+            <text class="elab" x="558" y="50" text-anchor="middle">kana + per-character confidence → support, conf</text>
+            <path class="edge" d="M861,152 V284" marker-end="url(#ah)"/>
+            <text class="elab" x="870" y="222">candidates</text>
+            <path class="edge" d="M786,327 H526" marker-end="url(#ah)"/>
+            <text class="elab" x="656" y="318" text-anchor="middle">accepted entries</text>
+            <path class="edge" d="M450,290 V158" marker-end="url(#ah)"/>
+            <text class="elab" x="441" y="226" text-anchor="end">stored entries</text>
+            <path class="edge fb" d="M640,152 L512,284" marker-end="url(#ah)"/>
+            <text class="elab" x="594" y="222">confirm / contradict</text>
+
+            <!-- legend -->
+            <path class="edge" d="M26,344 H58"/>
+            <text class="bandsub" x="66" y="348">data flow</text>
+            <path class="edge fb" d="M26,366 H58"/>
+            <text class="bandsub" x="66" y="370">read-time feedback</text>
+
+            <!-- nodes -->
+            <g class="node" data-node="utt" tabindex="0" role="button" aria-label="Utterance">
+              <rect x="24" y="78" width="108" height="74" rx="9"/>
+              <text class="nt" x="36" y="108">Utterance</text>
+              <text class="ns" x="36" y="128">one CSJ segment</text>
+            </g>
+            <g class="node" data-node="ctc" tabindex="0" role="button" aria-label="Kana CTC">
+              <rect x="190" y="78" width="132" height="74" rx="9"/>
+              <text class="nt" x="202" y="108">Kana CTC</text>
+              <text class="ns" x="202" y="128">no hotwords, cached</text>
+            </g>
+            <g class="node" data-node="read" tabindex="0" role="button" aria-label="Read policy">
+              <rect x="380" y="78" width="140" height="74" rx="9"/>
+              <text class="nt" x="392" y="108">Read policy</text>
+              <text class="ns" x="392" y="128">verify ≥ 0.8 · top 30</text>
+            </g>
+            <g class="node" data-node="dec" tabindex="0" role="button" aria-label="Decoder">
+              <rect x="588" y="78" width="140" height="74" rx="9"/>
+              <text class="nt" x="600" y="108">Decoder</text>
+              <text class="ns" x="600" y="128">hotword prompt</text>
+            </g>
+            <g class="node" data-node="ext" tabindex="0" role="button" aria-label="Extract candidates">
+              <rect x="786" y="78" width="150" height="74" rx="9"/>
+              <text class="nt" x="798" y="108">Extract</text>
+              <text class="ns" x="798" y="128">rare units in hyp</text>
+            </g>
+            <g class="node" data-node="mem" tabindex="0" role="button" aria-label="Memory store">
+              <rect x="380" y="290" width="140" height="74" rx="9"/>
+              <text class="nt" x="392" y="320">Memory store</text>
+              <text class="ns" x="392" y="340">prune · evict · keep</text>
+            </g>
+            <g class="node" data-node="gate" tabindex="0" role="button" aria-label="Write gate">
+              <rect x="786" y="290" width="150" height="74" rx="9"/>
+              <text class="nt" x="798" y="320">Write gate</text>
+              <text class="ns" x="798" y="340">support · conf · repeat</text>
+            </g>
+          </svg>
+        </div>
+        <p class="src narrow-only" style="margin:0">Scroll the diagram sideways to see the whole loop.</p>
+        <div class="detail" id="loop-detail" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="replay">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker"><span class="jp">再生</span>Session replay</div>
+        <h2>Memory building up over a sequence of talks</h2>
+        <p>The proposed system <b id="rp-sys">P</b> and the no-biasing baseline <b id="rp-base">B0</b> on the same talks, in their natural order. Pick a talk to see what the gate wrote, what memory holds afterwards, and how each utterance changed.</p>
+      </div>
+      <div class="stack" id="replay-app">
+        <div class="rp-bar">
+          <div class="ctlrow">
+            <label for="rp-seq">Sequence</label>
+            <select id="rp-seq"></select>
+          </div>
+          <div class="ctlrow">
+            <button class="btn" id="rp-prev" type="button">← Previous talk</button>
+            <button class="btn" id="rp-next" type="button">Next talk →</button>
+          </div>
+        </div>
+        <div class="rp-steps" id="rp-steps" role="group" aria-label="Talks in this sequence"></div>
+        <div class="tiles" id="rp-tiles"></div>
+        <div class="rp-cols">
+          <div class="panel">
+            <div class="panel-h"><h3 id="rp-mem-h">Memory after this talk</h3><small>sorted by evidence</small></div>
+            <div id="rp-mem"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-h"><h3>Write-gate decisions</h3><small id="rp-dec-n"></small></div>
+            <div id="rp-dec"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-h">
+            <h3>Utterances</h3>
+            <label class="check"><input type="checkbox" id="rp-changed" checked> Only where <span id="rp-sys2">P</span> and <span id="rp-base2">B0</span> differ</label>
+          </div>
+          <div class="legend" style="margin-bottom:10px">
+            <span><span class="rare">漢字</span> rare word in the reference</span>
+            <span><span class="err">誤</span> substituted or inserted</span>
+            <span><span class="del">字</span> deleted</span>
+          </div>
+          <div class="utts" id="rp-utts"></div>
+        </div>
+        <p class="src" id="rp-src"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="gate">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker"><span class="jp">書込</span>Write gate</div>
+        <h2>Tune the write gate on logged candidates</h2>
+        <p>Each mark is one rare-word candidate at the end of a talk. Move the thresholds to see which candidates would be written. A candidate counts as correct when its exact surface occurs in that talk's reference, so a phonetic katakana spelling counts as wrong even when the CTC hears it perfectly.</p>
+      </div>
+      <div class="stack" id="gate-app">
+        <div class="panel sliders">
+          <label for="g-sup"><span class="row"><span>Minimum support</span><output id="g-sup-o"></output></span><input type="range" id="g-sup" min="0" max="1" step="0.01"></label>
+          <label for="g-conf"><span class="row"><span>Minimum CTC confidence</span><output id="g-conf-o"></output></span><input type="range" id="g-conf" min="0" max="1" step="0.01"></label>
+          <label for="g-rep"><span class="row"><span>Minimum utterances</span><output id="g-rep-o"></output></span><input type="range" id="g-rep" min="1" max="4" step="1"></label>
+          <div style="display:flex;align-items:end"><button class="btn" id="g-reset" type="button">Reset to config</button></div>
+        </div>
+        <div class="tiles" id="g-tiles"></div>
+        <div class="gate-grid">
+          <div class="panel">
+            <div class="panel-h"><h3>Candidates by support and confidence</h3><small>shaded = written</small></div>
+            <div class="legend" style="margin-bottom:6px">
+              <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" style="fill:var(--s1)"/></svg>surface in the talk's reference</span>
+              <span><svg width="12" height="12" aria-hidden="true"><path d="M6,0.8 L11.2,6 L6,11.2 L0.8,6 z" style="fill:var(--s2)"/></svg>surface not in the reference</span>
+              <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" style="fill:var(--s0);opacity:.35"/></svg>fails the repeat rule</span>
+            </div>
+            <div id="g-plot"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-h"><h3>Precision against recall</h3><small>offline sweep</small></div>
+            <div class="legend" style="margin-bottom:6px">
+              <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="3.5" style="fill:var(--s0)"/></svg>sweep setting (click to load)</span>
+              <span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="5.5" style="fill:var(--accent)"/></svg>current thresholds</span>
+            </div>
+            <div id="g-pr"></div>
+          </div>
+        </div>
+        <p class="src" id="g-src"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="verify">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker"><span class="jp">照合</span>Acoustic check</div>
+        <h2>Fuzzy matching without word boundaries</h2>
+        <p>Kana CTC output has no word boundaries, so a reading is compared with every window of length n−1 to n+1 in the CTC string. The score is <code>Levenshtein.ratio</code>, one minus the indel distance over the total length. The best window decides: at 0.80 or above, the memory entry is offered to the decoder.</p>
+      </div>
+      <div class="panel stack" id="fz-app">
+        <div class="ctlrow"><span class="ctl-lab">Examples from the replay</span><div class="chips" id="fz-presets"></div></div>
+        <div class="fz-inputs">
+          <label for="fz-needle">Reading (memory entry)<input type="text" class="mono" id="fz-needle" autocomplete="off" spellcheck="false"></label>
+          <label for="fz-hay">CTC kana (utterance)<input type="text" class="mono" id="fz-hay" autocomplete="off" spellcheck="false"></label>
+          <label for="fz-slack">Slack<select id="fz-slack"><option value="0">0</option><option value="1" selected>1</option><option value="2">2</option></select></label>
+        </div>
+        <div class="fz-out" id="fz-out" aria-live="polite"></div>
+        <div class="fz-scroll"><div class="fz-grid" id="fz-grid"></div></div>
+        <div class="ctlrow"><span class="ramp">ratio 0 <i></i> 1</span><span class="ctl-lab">Each score cell is the window that starts at that character (×100). Hover a cell to see its window.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="systems">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker"><span class="jp">構成</span>Systems</div>
+        <h2>Baselines, the proposed system and its ablations</h2>
+        <p>Each system is a set of overrides on the default agent in <code>configs/base.yaml</code>. Highlighted cells differ from P. Add a system under <code>systems:</code>, optionally with <code>_extends_: P</code>.</p>
+      </div>
+      <div class="tbl-wrap" id="sys-table"></div>
+    </div>
+  </section>
+
+  <section class="band" id="results">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker"><span class="jp">結果</span>Results</div>
+        <h2>Evaluation output</h2>
+        <p>Read from <code>runs/&lt;exp&gt;/eval/</code> and the go/no-go table. The experiment and comparison picks apply to every chart below.</p>
+      </div>
+      <div id="results-app">
+        <div class="panel stack">
+          <div class="ctlrow"><span class="ctl-lab">Experiment</span><div class="seg" id="rs-exp" role="group" aria-label="Experiment"></div></div>
+          <div class="ctlrow"><span class="ctl-lab">Compare P and B0 with up to three systems</span><div class="chips" id="rs-cmp"></div></div>
+        </div>
+
+        <div class="sub-h"><h3>Is there anything to remember?</h3><p>Share of a talk's rare words already seen earlier in the same sequence, from references only. It is the ceiling for any cross-session memory. Random grouping is the control.</p></div>
+        <div id="rs-recur"></div>
+
+        <div class="sub-h"><h3>All systems</h3><p>Click a column to sort. Bold marks the best value among systems that do not see the reference (B4 and B5 do).</p></div>
+        <div id="rs-table"></div>
+
+        <div class="sub-h"><h3>Across talks</h3><p>Each point pools all sequences and permutations at that position. Memory systems should improve as t grows.</p></div>
+        <div class="legend" id="rs-legend" style="margin-bottom:10px"></div>
+        <div id="rs-steps"></div>
+
+        <div class="sub-h"><h3>Memory after each talk</h3><p>Precision: entries whose surface was actually said in talks up to t. Coverage: share of the next talk's rare words already in memory.</p></div>
+        <div id="rs-mem"></div>
+
+        <div class="sub-h"><h3>Paired bootstrap</h3><p>Error rate of P minus each other system, resampling whole talks. Negative means P has fewer errors. A filled dot means the 95% interval excludes zero.</p></div>
+        <div id="rs-boot"></div>
+
+        <div class="sub-h"><h3>Metric definitions</h3></div>
+        <div class="panel">
+          <dl class="knobs">
+            <dt><code>CER</code></dt><dd>Character error rate on normalised text (NFKC, no spaces or punctuation).</dd>
+            <dt><code>B-CER</code></dt><dd>Errors on reference characters inside rare-word spans. An insertion counts here only when both neighbouring characters are rare.</dd>
+            <dt><code>U-CER</code></dt><dd>Errors on all other characters.</dd>
+            <dt><code>term_R / term_P</code></dt><dd>Recall over rare-word occurrences in the reference; precision over rare words plus offered hotwords.</dd>
+            <dt><code>harmful</code></dt><dd>Share of characters B0 got right that this system gets wrong.</dd>
+            <dt><code>induced_fp_per_1k</code></dt><dd>Offered hotwords that appear more often than in the reference, per 1,000 reference characters.</dd>
+            <dt><code>mem_poison</code></dt><dd>Injected wrong entries still alive in memory (poison experiment).</dd>
+          </dl>
+        </div>
+        <p class="src" id="rs-src"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="pipeline">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker"><span class="jp">手順</span>Pipeline</div>
+        <h2>From a CSJ data directory to this page</h2>
+        <p>Set <code>C=configs/base.yaml</code>. Every step reads the config; <code>./run_toy.sh</code> runs the same chain on a synthetic corpus with mock backends in about ten seconds.</p>
+      </div>
+      <div class="panel">
+        <ol class="pipe">
+          <li><div><h3>Manifests</h3><p>Kaldi/ESPnet data dirs (<code>wav.scp</code>, <code>segments</code>, <code>text</code>) to JSONL. Use only talks the models never trained on as sessions.</p><code class="cmd">python scripts/prepare_csj.py --data-dir $ESPNET/egs2/csj/asr1/data/eval1 --out work/csj/manifests/eval1.jsonl</code><span class="out">→ work/csj/manifests/*.jsonl</span></div></li>
+          <li><div><h3>Rare-word definition</h3><p>Count content units on CSJ train; anything outside the top N is rare.</p><code class="cmd">python scripts/build_rare_vocab.py --config $C</code><span class="out">→ work/csj/rare/vocab.tsv, common_top5000.txt</span></div></li>
+          <li><div><h3>Session sequences</h3><p>Group talks by domain (or speaker), with a random grouping as the control, and draw permutations.</p><code class="cmd">python scripts/build_sequences.py --config $C --group-by domain --out work/csj/seq_domain.json</code><span class="out">→ work/csj/seq_domain.json, seq_random.json</span></div></li>
+          <li><div><h3>Go / no-go</h3><p>Rare-word recurrence between talks, from references only. If it is low, memory cannot help.</p><code class="cmd">python scripts/go_nogo.py --config $C --sequences work/csj/seq_domain.json work/csj/seq_random.json --out work/csj/go_nogo.csv</code><span class="out">→ work/csj/go_nogo.csv</span></div></li>
+          <li><div><h3>Run systems</h3><p>Resumable. CTC and decoder outputs are cached per utterance and hotword set, so systems share work.</p><code class="cmd">python scripts/run_longitudinal.py --config $C --exp main --sequences work/csj/seq_domain.json --n-perm 5 --systems B0 B1 B2 B3 B4 B5 P</code><span class="out">→ runs/main/&lt;system&gt;/&lt;seq&gt;/perm&lt;k&gt;/</span></div></li>
+          <li><div><h3>Evaluate</h3><p>Overall table, per-talk curves, memory quality and the paired bootstrap.</p><code class="cmd">python scripts/evaluate.py --config $C --exp main --baseline B0 --compare P</code><span class="out">→ runs/main/eval/*.csv</span></div></li>
+          <li><div><h3>Sweep and poison</h3><p>Exp1 precision–recall sweep over logged candidates; Exp2 injects wrong entries before the first talk.</p><code class="cmd">python scripts/sweep_write_gate.py --config $C --exp main --system P-noRepeat
+python scripts/make_poison.py --config $C --sequences work/csj/seq_domain.json --k 5 --out work/csj/poison.json</code><span class="out">→ runs/main/eval/write_gate_sweep_P-noRepeat.csv, runs/poison/</span></div></li>
+          <li><div><h3>Export to this page</h3><p>Collects the tables, a replay trace and the code map into one data file next to this page.</p><code class="cmd">python scripts/export_site_data.py --config $C --exps main poison --out site/data/results.js</code><span class="out">→ site/data/results.js</span></div></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="code">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="kicker"><span class="jp">構造</span>Code</div>
+        <h2>Codebase map</h2>
+        <p id="code-lead">Each module with its line count and the first line of its docstring.</p>
+      </div>
+      <div class="tbl-wrap" id="code-table"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p id="foot-src"></p>
+    <p>Regenerate after new runs with <code>python scripts/export_site_data.py --config &lt;config&gt; --exps main poison</code>, then open <code>site/index.html</code>.</p>
+  </div>
+</footer>
+
+<script src="data/results.js"></script>
+<script>
+(() => {
+"use strict";
+const D = window.VAGENT_DATA || null;
+
+/* ---------------------------------------------------------------- helpers */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k === "style") el.style.cssText = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return el;
+}
+const NS = "http://www.w3.org/2000/svg";
+function s(tag, attrs, ...kids) {
+  const el = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v);
+  for (const c of kids.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return el;
+}
+const isNum = v => typeof v === "number" && isFinite(v);
+const fx = (v, d = 3) => isNum(v) ? v.toFixed(d) : "–";
+const pct = (v, d = 1) => isNum(v) ? (v * 100).toFixed(d) + "%" : "–";
+const signed = (v, d = 3) => isNum(v) ? (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(d) : "–";
+const sum = a => a.reduce((x, y) => x + y, 0);
+
+function niceStep(raw) {
+  const e = 10 ** Math.floor(Math.log10(raw)), f = raw / e;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * e;
+}
+function niceScale(max, n = 4) {
+  if (!(max > 0)) max = 1;
+  const step = niceStep(max / n), top = Math.ceil(max / step - 1e-9) * step, ticks = [];
+  for (let t = 0; t <= top + step / 2; t += step) ticks.push(+t.toFixed(10));
+  return { max: top, ticks, dec: decimals(step) };
+}
+function decimals(step) { let d = 0; while (d < 4 && Math.abs(Math.round(step * 10 ** d) - step * 10 ** d) > 1e-9) d++; return d; }
+
+const RO = new ResizeObserver(es => { for (const e of es) { const el = e.target, w = Math.round(e.contentRect.width); if (el._w !== w && el._draw) { el._w = w; el._draw(); } } });
+function mount(host, draw) { host._draw = () => { host._w = Math.round(host.clientWidth); draw(); }; host._draw(); RO.observe(host); }
+
+/* tooltip */
+const tip = h("div", { class: "tip", hidden: true });
+document.body.append(tip);
+function showTip(x, y, title, rows) {
+  tip.replaceChildren();
+  if (title) tip.append(h("div", { class: "tip-t" }, title));
+  for (const r of rows) tip.append(h("div", { class: "tip-r" }, r.color ? h("i", { class: "key", style: `background:${r.color}` }) : null, h("b", null, r.value), h("span", null, r.label)));
+  tip.hidden = false;
+  const w = tip.offsetWidth, ht = tip.offsetHeight;
+  let left = x + 14, top = y + 14;
+  if (left + w > innerWidth - 8) left = Math.max(8, x - w - 14);
+  if (top + ht > innerHeight - 8) top = Math.max(8, y - ht - 14);
+  tip.style.left = left + "px"; tip.style.top = top + "px";
+}
+const hideTip = () => { tip.hidden = true; };
+function svgPoint(svg, e, W) { const r = svg.getBoundingClientRect(); const k = W / r.width; return [(e.clientX - r.left) * k, (e.clientY - r.top) * k]; }
+
+/* systems */
+const SYS_DESC = {
+  B0: "No biasing.",
+  B1: "Static hotword list, filtered by the CTC.",
+  B2: "In-talk glossary: frequent rare words from pass 1 become pass-2 hotwords. Nothing kept across talks.",
+  B3: "Text-only memory: writes every candidate seen twice, reads without verification, never forgets.",
+  B4: "Write gate uses the talk's reference: the ceiling of the write policy.",
+  B5: "Oracle list: rare words of the current talk's reference.",
+  P: "Acoustic write gate (support, confidence, repeat), verified read, confidence-based capacity.",
+  "P-noSupport": "P without the support signal.",
+  "P-noConf": "P without the confidence signal.",
+  "P-noRepeat": "P without the repeat rule; logs every candidate for the sweep.",
+  "P-noVerify": "P with unverified read.",
+  "P-unbounded": "No capacity limit and no contradiction pruning.",
+  "P-lru": "Least-recently-used eviction at 100 entries.",
+  "P-decay": "Unused entries decay and drop below a weight floor.",
+  "P-surface": "Surface only; readings come from MeCab.",
+  "P-mecabRead": "Reading from MeCab instead of the CTC window.",
+  "P-context": "Surface, reading and a context snippet in the prompt.",
+  "P+static": "P plus the static list.",
+};
+const GROUPS = [
+  ["Baselines", n => /^B\d+$/.test(n)],
+  ["Proposed", n => n === "P"],
+  ["Exp1 · write signals", n => /^P-no(Support|Conf|Repeat)$/.test(n)],
+  ["Exp2 · read and capacity", n => /^P-(noVerify|unbounded|lru|decay)$/.test(n)],
+  ["Exp3 · representation", n => /^P-(surface|mecabRead|context)$/.test(n)],
+  ["Exp4 · static + dynamic", n => n === "P+static"],
+  ["Custom", () => true],
+];
+const groupOf = n => GROUPS.find(([, f]) => f(n))[0];
+const ORDER = D ? Object.keys(D.systems || {}) : [];
+const sysSort = (a, b) => { const ia = ORDER.indexOf(a), ib = ORDER.indexOf(b); return (ia < 0 ? 1e3 : ia) - (ib < 0 ? 1e3 : ib) || a.localeCompare(b); };
+const usesRef = n => n === "B4" || n === "B5";
+
+/* text rendering */
+function refText(ref, spans) {
+  const out = []; let cur = 0;
+  for (const [a, b] of spans) { if (a > cur) out.push(ref.slice(cur, a)); out.push(h("span", { class: "rare" }, ref.slice(a, b))); cur = b; }
+  if (cur < ref.length) out.push(ref.slice(cur));
+  return h("span", { class: "txt" }, out);
+}
+function hypText(ref, hyp, ops) {
+  const err = new Array(hyp.length).fill(false), dels = {};
+  for (const [op, i1, i2, j1, j2] of ops) {
+    if (op === "d") (dels[j1] = dels[j1] || []).push(ref.slice(i1, i2));
+    else for (let j = j1; j < j2; j++) err[j] = true;
+  }
+  const out = [];
+  let j = 0;
+  while (j <= hyp.length) {
+    if (dels[j]) out.push(h("span", { class: "del", title: "deleted" }, dels[j].join("")));
+    if (j === hyp.length) break;
+    let k = j; while (k < hyp.length && err[k] === err[j] && !(k > j && dels[k])) k++;
+    out.push(err[j] ? h("span", { class: "err" }, hyp.slice(j, k)) : hyp.slice(j, k));
+    j = k;
+  }
+  return h("span", { class: "txt" }, out);
+}
+function hwChip(o) { return h("span", { class: "hw", title: `${o.source}, match ${fx(o.score, 2)}` }, o.surface, o.reading ? h("small", null, o.reading) : null, h("small", null, fx(o.score, 2))); }
+function uttLines(u, sysName, baseName) {
+  return h("div", { class: "lines" },
+    h("span", { class: "lab" }, "Ref"), refText(u.ref, u.spans),
+    h("span", { class: "lab" }, baseName), hypText(u.ref, u.base, u.base_ops),
+    h("span", { class: "lab" }, sysName), hypText(u.ref, u.hyp, u.ops),
+    u.ctc != null ? [h("span", { class: "lab" }, "CTC"), h("span", { class: "txt ctc" }, u.ctc)] : null,
+    h("span", { class: "lab" }, "Offered"), u.offered.length ? h("span", { class: "chips" }, u.offered.map(hwChip)) : h("span", { class: "empty", style: "font-size:13px" }, "nothing offered"));
+}
+
+/* line chart: one y scale, crosshair + tooltip listing every series */
+function lineChart(host, { series, fmt, height = 180, xTitle = "talk t", yMax }) {
+  mount(host, () => {
+    host.replaceChildren();
+    const pts = series.flatMap(se => se.pts.filter(p => isNum(p.y)));
+    if (!pts.length) { host.append(h("p", { class: "empty" }, "No data.")); return; }
+    const W = Math.max(240, host.clientWidth), H = height, m = { l: 40, r: 12, t: 10, b: 34 };
+    const xs = [...new Set(series.flatMap(se => se.pts.map(p => p.x)))].sort((a, b) => a - b);
+    const sc = niceScale(yMax != null ? Math.max(yMax, ...pts.map(p => p.y)) : Math.max(...pts.map(p => p.y)));
+    const f = fmt || (v => v.toFixed(sc.dec));
+    const x = v => m.l + (xs.length < 2 ? (W - m.l - m.r) / 2 : xs.indexOf(v) / (xs.length - 1) * (W - m.l - m.r));
+    const y = v => m.t + (1 - v / sc.max) * (H - m.t - m.b);
+    const svg = s("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, width: W, height: H, tabindex: 0, role: "img", "aria-label": host.dataset.label || "line chart" });
+    for (const t of sc.ticks) {
+      svg.append(s("line", { class: t === 0 ? "axis" : "grid", x1: m.l, x2: W - m.r, y1: y(t), y2: y(t) }));
+      svg.append(s("text", { class: "tick", x: m.l - 6, y: y(t), "text-anchor": "end", "dominant-baseline": "middle" }, t.toFixed(sc.dec)));
+    }
+    for (const v of xs) svg.append(s("text", { class: "tick", x: x(v), y: H - m.b + 15, "text-anchor": "middle" }, v));
+    svg.append(s("text", { class: "tick", x: W - m.r, y: H - 3, "text-anchor": "end" }, xTitle));
+    for (const se of series) {
+      const p = se.pts.filter(q => isNum(q.y)); if (!p.length) continue;
+      svg.append(s("path", { class: "ln", d: p.map((q, i) => (i ? "L" : "M") + x(q.x).toFixed(1) + "," + y(q.y).toFixed(1)).join(""), style: `stroke:${se.color}` }));
+      const last = p[p.length - 1];
+      svg.append(s("circle", { class: "dot", cx: x(last.x), cy: y(last.y), r: 4, style: `fill:${se.color}` }));
+    }
+    const cross = s("line", { class: "cross", y1: m.t, y2: H - m.b, visibility: "hidden" }), marks = s("g");
+    svg.append(cross, marks);
+    const hit = s("rect", { x: 0, y: 0, width: W, height: H, fill: "transparent" });
+    svg.append(hit);
+    let idx = -1;
+    const show = (i, cx, cy) => {
+      idx = i; const xv = xs[i];
+      cross.setAttribute("x1", x(xv)); cross.setAttribute("x2", x(xv)); cross.setAttribute("visibility", "visible");
+      marks.replaceChildren(); const rows = [];
+      for (const se of series) {
+        const p = se.pts.find(q => q.x === xv);
+        if (!p || !isNum(p.y)) continue;
+        marks.append(s("circle", { class: "dot", cx: x(xv), cy: y(p.y), r: 4, style: `fill:${se.color}` }));
+        rows.push({ color: se.color, value: f(p.y), label: se.label });
+      }
+      showTip(cx, cy, `${xTitle} = ${xv}`, rows);
+    };
+    const hide = () => { cross.setAttribute("visibility", "hidden"); marks.replaceChildren(); hideTip(); };
+    hit.addEventListener("pointermove", e => {
+      const [px] = svgPoint(svg, e, W); let bi = 0, bd = Infinity;
+      xs.forEach((v, i) => { const d = Math.abs(x(v) - px); if (d < bd) { bd = d; bi = i; } });
+      show(bi, e.clientX, e.clientY);
+    });
+    hit.addEventListener("pointerleave", hide);
+    svg.addEventListener("blur", hide);
+    svg.addEventListener("keydown", e => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      e.preventDefault();
+      idx = Math.max(0, Math.min(xs.length - 1, (idx < 0 ? 0 : idx + (e.key === "ArrowRight" ? 1 : -1))));
+      const r = svg.getBoundingClientRect(); show(idx, r.left + x(xs[idx]) * r.width / W, r.top + 10);
+    });
+    host.append(svg);
+  });
+}
+function lineKey(color) { return s("svg", { width: 16, height: 8, "aria-hidden": "true" }, s("line", { x1: 1, x2: 15, y1: 4, y2: 4, style: `stroke:${color};stroke-width:2.5;stroke-linecap:round` })); }
+function legend(el, items) { el.replaceChildren(...items.map(([c, l]) => h("span", null, lineKey(c), l))); }
+
+function smallMultiples(host, metrics, seriesFor, opts = {}) {
+  host.replaceChildren();
+  const grid = h("div", { class: "multi" });
+  for (const [key, title, hint] of metrics) {
+    const c = h("div", { "data-label": title });
+    grid.append(h("div", { class: "panel mchart" }, h("div", { class: "mchart-h" }, h("h3", null, title), hint ? h("small", null, hint) : null), c));
+    lineChart(c, { series: seriesFor(key), yMax: opts.yMax?.[key], xTitle: opts.xTitle });
+  }
+  host.append(grid);
+}
+function stepTable(metrics, seriesFor) {
+  const all = metrics.map(([k, t]) => [t, seriesFor(k)]);
+  const xs = [...new Set(all.flatMap(([, se]) => se.flatMap(x => x.pts.map(p => p.x))))].sort((a, b) => a - b);
+  const rows = [];
+  for (const [t, se] of all) {
+    rows.push(h("tr", { class: "grp" }, h("td", { colspan: xs.length + 1 }, t)));
+    for (const x of se) rows.push(h("tr", null, h("td", null, x.label), xs.map(v => { const p = x.pts.find(q => q.x === v); return h("td", { class: "num" }, p && isNum(p.y) ? fx(p.y) : "–"); })));
+  }
+  return h("details", { class: "tv" }, h("summary", null, "Table view"),
+    h("div", { class: "tbl-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", null, "Series"), xs.map(v => h("th", { class: "num" }, `t=${v}`)))), h("tbody", null, rows))));
+}
+
+/* ---------------------------------------------------------------- provenance + hero */
+function renderProv() {
+  const el = $("#prov"), foot = $("#foot-src");
+  if (!D) {
+    el.append(h("b", null, "No exported data found. "), "Run ", h("code", null, "scripts/export_site_data.py"), " to fill the replay, gate and results sections.");
+    foot.textContent = "No data file loaded (data/results.js).";
+    return;
+  }
+  const m = D.meta;
+  if (m.toy) el.append(h("span", { class: "pill warn" }, "Toy data"), " Mock CTC and mock decoder on a synthetic corpus (", `${m.n_talks} talks, ${m.n_utts} utterances`, "). These numbers only show that the pipeline runs end to end; they are not experimental results.");
+  else el.append(h("span", { class: "pill new" }, "Run data"), ` ${m.config}: CTC ${m.backends.ctc}, decoder ${m.backends.decoder}; ${m.n_talks} talks, ${m.n_utts.toLocaleString("en")} utterances.`);
+  foot.append("Data: ", h("code", null, m.config), ` → ${m.runs_dir}/{${m.exps.join(", ")}} · CTC backend ${m.backends.ctc}, decoder ${m.backends.decoder}.`);
+}
+function renderHeroExample() {
+  const T = D?.trace; if (!T) return;
+  for (const q of T.seqs) for (const st of q.steps) {
+    if (st.step < 1) continue;
+    for (const u of st.utts) {
+      const mem = u.offered.find(o => o.source === "memory" && u.hyp.includes(o.surface) && !u.base.includes(o.surface));
+      if (!mem || u.ops.length) continue;
+      const el = $("#hero-example");
+      el.append(
+        h("div", { class: "example-h" }, h("h3", null, "From the replay"), h("span", { class: "pill mute" }, `${q.seq_id} · talk t=${st.step} · ${st.talk_id}`)),
+        uttLines(u, T.system, T.baseline),
+        h("p", { class: "example-note" }, "B0 writes ", h("b", null, u.base.slice(...spanOfDiff(u))), ". ", T.system, " was offered ", h("b", null, mem.surface), ` from memory (written in an earlier talk, matched in this utterance's CTC kana at ${fx(mem.score, 2)}) and gets the word right.`));
+      el.hidden = false;
+      return;
+    }
+  }
+}
+function spanOfDiff(u) {
+  const o = u.base_ops; if (!o.length) return [0, 0];
+  return [Math.min(...o.map(x => x[3])), Math.max(...o.map(x => x[4]))];
+}
+
+/* ---------------------------------------------------------------- diagram */
+const NODES = {
+  utt: { t: "Utterance", files: ["src/vagent/data/manifest.py", "scripts/prepare_csj.py"],
+    d: "One segment of a CSJ talk. A talk is one session; a sequence is an ordered list of talks from the same domain or speaker, processed with one persistent memory.",
+    k: [["data.text_field", "text | text_nofiller: one filler variant, fixed for every system"]] },
+  ctc: { t: "Kana CTC", files: ["src/vagent/asr/ctc_hf.py", "src/vagent/asr/cache.py"],
+    d: "Greedy hiragana transcript with one confidence per character. It runs without hotwords and is cached, so every system sees the same acoustics. It is the acoustic anchor for both reading and writing memory.",
+    k: [["backends.ctc.type", "hf (any AutoModelForCTC with a kana vocab) | external | mock | none"], ["backends.ctc.cache_tag", "change it whenever the model changes"]] },
+  read: { t: "Read policy", files: ["src/vagent/memory/read_policy.py", "src/vagent/matching/fuzzy.py"],
+    d: "Each memory entry's reading is searched in the CTC kana with fuzzy matching. Entries scoring at least min_score are offered, best first, up to top_k. With verify off, entries are ranked by memory priority instead, and the static list (B1) or an oracle list (B5) can be mixed in.",
+    k: [["read.verify", "true"], ["read.min_score", "0.8"], ["read.top_k", "30"], ["read.representation", "surface | surface_reading | surface_reading_context"]] },
+  dec: { t: "Decoder", files: ["src/vagent/asr/whisper_prompt.py", "src/vagent/asr/external_template.py"],
+    d: "A hotword-conditioned decoder: Whisper with the hotwords in its prompt, or your own speech LLM. It receives Hotword(surface, reading, context) and the CTC result. If it filters hotwords with CTC internally, turn read.verify off to avoid filtering twice.",
+    k: [["backends.decoder.type", "whisper_prompt | external | mock"], ["kwargs.prompt_style", "list | with_reading | with_context"]] },
+  ext: { t: "Candidate extraction", files: ["src/vagent/memory/write_policy.py", "src/vagent/text/lexicon.py"],
+    d: "Rare units in the hypothesis: UniDic content nouns, compounds merged, that are not among the top-N units of CSJ train. Each candidate gets support (best fuzzy match of its reading in the CTC kana) and conf (mean CTC confidence over that window).",
+    k: [["rare.top_n", "5000"], ["rare.merge_compounds", "true (音声+認識 → 音声認識)"], ["write.context_chars", "8"]] },
+  gate: { t: "Write gate", files: ["src/vagent/memory/write_policy.py", "scripts/sweep_write_gate.py"],
+    d: "At the end of a talk, candidates are grouped by surface. In acoustic mode a surface is written only if its mean support, mean confidence and utterance count all clear their thresholds. The reading stored is the CTC window most often matched. Every decision, accepted or not, is logged for offline sweeps.",
+    k: [["write.mode", "none | text_freq | glossary | acoustic | label"], ["write.min_support", "0.85"], ["write.min_conf", "0.6"], ["write.min_repeat", "2"], ["write.reading_source", "ctc | mecab"]] },
+  mem: { t: "Memory store", files: ["src/vagent/memory/store.py"],
+    d: "Entries keep surface, reading, contexts, running support and confidence, and confirm/contradict counts from read-time feedback. At the end of a talk, entries contradicted at least margin times more than confirmed are pruned, then the capacity policy evicts. The confidence policy drops the lowest evidence = support·log(1+n_occ) + confirm − λ·contradict.",
+    k: [["memory.policy", "unbounded | lru | decay | confidence"], ["memory.max_size", "200"], ["memory.prune_on_contradiction", "true, margin 2"], ["write.confirm_threshold", "0.9"]] },
+};
+function initDiagram() {
+  const det = $("#loop-detail");
+  const show = id => {
+    for (const g of $$(".dg .node")) { g.classList.toggle("on", g.dataset.node === id); g.setAttribute("aria-pressed", g.dataset.node === id); }
+    const n = NODES[id];
+    det.replaceChildren(h("h3", null, n.t), h("p", null, n.d), h("div", { class: "files" }, n.files.map(f => h("code", null, f))),
+      h("dl", { class: "knobs" }, n.k.map(([k, v]) => [h("dt", null, h("code", null, k)), h("dd", null, v)])));
+  };
+  for (const g of $$(".dg .node")) {
+    g.addEventListener("click", () => show(g.dataset.node));
+    g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(g.dataset.node); } });
+  }
+  show("read");
+}
+
+/* ---------------------------------------------------------------- replay */
+function initReplay() {
+  const T = D?.trace, root = $("#replay-app");
+  if (!T || !T.seqs.length) { root.replaceChildren(h("p", { class: "empty" }, "No replay trace in the export. It needs runs of the trace system and baseline (P and B0 by default).")); return; }
+  for (const id of ["#rp-sys", "#rp-sys2"]) $(id).textContent = T.system;
+  for (const id of ["#rp-base", "#rp-base2"]) $(id).textContent = T.baseline;
+  const sel = $("#rp-seq");
+  T.seqs.forEach((q, i) => sel.append(h("option", { value: i }, q.seq_id)));
+  const wg = D.defaults?.write || {};
+  let si = 0, t = Math.min(2, T.seqs[0].steps.length - 1);
+  sel.addEventListener("change", () => { si = +sel.value; t = Math.min(t, T.seqs[si].steps.length - 1); draw(); });
+  $("#rp-prev").addEventListener("click", () => { t = Math.max(0, t - 1); draw(); });
+  $("#rp-next").addEventListener("click", () => { t = Math.min(T.seqs[si].steps.length - 1, t + 1); draw(); });
+  $("#rp-changed").addEventListener("change", draw);
+  $("#rp-src").append("Source: ", h("code", null, `${D.meta.runs_dir}/${T.exp}/${T.system}/<seq>/perm0`), " and ", h("code", null, T.baseline), ", up to ", String(T.seqs.length), " sequences.");
+
+  function meter(v, th) {
+    return h("div", { class: "meterbox" }, h("span", null, fx(v, 2)),
+      h("div", { class: "meter", title: `threshold ${th}` }, h("i", { class: v < th ? "below" : "", style: `width:${Math.max(0, Math.min(1, v || 0)) * 100}%` }), h("u", { style: `left:${th * 100}%` })));
+  }
+  function draw() {
+    const q = T.seqs[si], st = q.steps[t], prev = t > 0 ? q.steps[t - 1] : null;
+    $("#rp-steps").replaceChildren(...q.steps.map((x, i) => h("button", { type: "button", class: "rp-step", "aria-current": i === t ? "step" : null, onclick: () => { t = i; draw(); } }, h("b", null, `t=${x.step}`), h("small", null, x.talk_id))));
+    $("#rp-prev").disabled = t === 0; $("#rp-next").disabled = t === q.steps.length - 1;
+
+    const sm = st.summary, ev = st.events;
+    const added = ev.filter(e => e.op === "add").length, pruned = ev.filter(e => e.op === "prune");
+    const acc = st.decisions.filter(d => d.accepted);
+    const nOff = sum(st.utts.map(u => u.offered.length));
+    const tile = (l, v, d) => h("div", { class: "tile" }, h("div", { class: "l" }, l), h("div", { class: "v" }, v), h("div", { class: "d" }, d));
+    $("#rp-tiles").replaceChildren(
+      tile("Rare-span CER (B-CER)", fx(sm.system["B-CER"]), `${T.baseline}: ${fx(sm.baseline["B-CER"])} · ${signed(sm.system["B-CER"] - sm.baseline["B-CER"])}`),
+      tile("CER", fx(sm.system.CER), `${T.baseline}: ${fx(sm.baseline.CER)} · ${signed(sm.system.CER - sm.baseline.CER)}`),
+      tile("Hotwords offered", String(nOff), st.utts.length === st.n_utts ? `over ${st.n_utts} utterances` : `over ${st.utts.length} shown of ${st.n_utts} utterances`),
+      tile("Memory entries", String(st.memory.length), `+${added} new, −${pruned.length} pruned this talk`));
+
+    /* memory */
+    const memBox = $("#rp-mem"); memBox.replaceChildren();
+    $("#rp-mem-h").textContent = `Memory after talk t=${st.step}`;
+    if (!st.memory.length) memBox.append(h("p", { class: "empty" }, t === 0 && !q.init_memory ? "Empty: nothing has been written yet." : "Empty."));
+    else {
+      const updated = new Set(ev.filter(e => e.op === "update").map(e => e.surface));
+      const rows = [...st.memory].sort((a, b) => b.evidence - a.evidence).map(e => h("tr", null,
+        h("td", null, h("div", { class: "surf" }, e.surface, " ", e.source === "poison" ? h("span", { class: "pill warn" }, "poison") : e.created_step === st.step ? h("span", { class: "pill new" }, "new") : updated.has(e.surface) ? h("span", { class: "pill mute" }, "rewritten") : null), h("div", { class: "rd" }, e.reading || "—")),
+        h("td", null, e.correct ? h("span", { class: "pill good", title: "surface occurs in the references so far" }, "✓ said") : h("span", { class: "pill bad", title: "surface never occurs in the references so far" }, "✕ never said")),
+        h("td", { class: "num" }, e.n_occ),
+        h("td", { class: "num" }, fx(e.support, 2)),
+        h("td", { class: "num" }, `${e.confirm} / ${e.contradict}`),
+        h("td", { class: "num" }, fx(e.evidence, 2))));
+      memBox.append(h("div", { class: "tbl-wrap mem" }, h("table", null,
+        h("thead", null, h("tr", null, h("th", null, "Entry"), h("th", null, "In refs"), h("th", { class: "num", title: "occurrences written" }, "Occ."), h("th", { class: "num" }, "Support"), h("th", { class: "num", title: "read-time confirmations / contradictions" }, "✓ / ✕"), h("th", { class: "num" }, "Evidence"))),
+        h("tbody", null, rows))));
+    }
+    if (pruned.length) memBox.append(h("div", { class: "pruned" }, "Pruned this talk: ", pruned.map((p, i) => [i ? ", " : "", h("s", null, p.surface), ` (${p.reason})`])));
+    if (t === 0 && q.init_memory?.length) memBox.append(h("div", { class: "pruned" }, `Injected before t=0: ${q.init_memory.map(e => e.surface).join("、")}`));
+
+    /* decisions */
+    const decBox = $("#rp-dec"); decBox.replaceChildren();
+    $("#rp-dec-n").textContent = `${acc.length} of ${st.decisions.length} written`;
+    if (!st.decisions.length) decBox.append(h("p", { class: "empty" }, "No rare-word candidates in this talk."));
+    else {
+      const ds = [...st.decisions].sort((a, b) => (b.accepted - a.accepted) || (b.support - a.support));
+      decBox.append(h("div", { class: "dec" },
+        h("div", { class: "dec-row dec-head" }, h("span", { class: "dec-c" }, "Candidate · utterances"), h("span", null, `Support ≥ ${wg.min_support ?? 0.85}`), h("span", null, `Conf. ≥ ${wg.min_conf ?? 0.6}`), h("span", null, "Decision")),
+        ds.map(d => h("div", { class: "dec-row" },
+          h("div", { class: "dec-c" }, h("span", { class: "surf" }, d.surface), " ", h("span", { class: "rd" }, `×${d.n_utt}`), h("div", { class: "rd" }, d.reading)),
+          meter(d.support, wg.min_support ?? 0.85), meter(d.conf, wg.min_conf ?? 0.6),
+          h("div", { class: "verdict" }, d.accepted ? h("span", { class: "pill good" }, "✓ Written") : h("span", { class: "pill bad", title: d.reason }, "✕ " + d.reason.replace(/^fail:/, "").replace(/\+/g, ", ")),
+            h("small", null, d.correct ? "in the ref" : "not in the ref"))))));
+    }
+
+    /* utterances */
+    const only = $("#rp-changed").checked;
+    const us = only ? st.utts.filter(u => u.hyp !== u.base) : st.utts;
+    const ub = $("#rp-utts");
+    ub.replaceChildren(...us.map(u => h("div", { class: "utt" }, h("div", { class: "utt-h" }, h("code", null, u.utt_id), h("span", null, `${u.offered.length} offered`)), uttLines(u, T.system, T.baseline))));
+    if (!us.length) ub.append(h("p", { class: "empty" }, only ? "No utterance in this talk changed. Clear the filter to see all of them." : "No utterances."));
+    else if (only) ub.append(h("p", { class: "src" }, `${us.length} of ${st.utts.length} utterances differ.`));
+    if (prev == null && t === 0) ub.prepend(h("p", { class: "src", style: "margin:0" }, "First talk: memory starts empty, so nothing comes from memory yet."));
+  }
+  draw();
+}
+
+/* ---------------------------------------------------------------- write gate */
+function initGate() {
+  const G = D?.gate, app = $("#gate-app");
+  if (!G || !G.candidates.length) { app.replaceChildren(h("p", { class: "empty" }, "No logged gate candidates in the export.")); return; }
+  const w = D.defaults.write, cs = G.candidates;
+  const sweep = D.exps[G.exp]?.sweeps?.[G.system] || [];
+  const sup = $("#g-sup"), conf = $("#g-conf"), rep = $("#g-rep");
+  rep.max = Math.max(4, Math.min(8, Math.max(...cs.map(c => c.n_utt))));
+  const reset = () => { sup.value = w.min_support; conf.value = w.min_conf; rep.value = w.min_repeat; update(); };
+  $("#g-src").append("Source: ", h("code", null, `${D.meta.runs_dir}/${G.exp}/${G.system}/*/perm0/decisions.jsonl`), ` · ${cs.length} candidates · ${G.n_ref} reference rare-word types. Recall counts the talk's rare-word types that get written.`);
+  const th = () => ({ s: +sup.value, c: +conf.value, r: +rep.value });
+  const pass = (c, t) => c.support >= t.s - 1e-9 && c.conf >= t.c - 1e-9 && c.n_utt >= t.r;
+  function stats(t) {
+    const a = cs.filter(c => pass(c, t));
+    return { n: a.length, p: a.length ? a.filter(c => c.correct).length / a.length : NaN, r: G.n_ref ? a.filter(c => c.in_ref_rare).length / G.n_ref : 0 };
+  }
+  const plot = $("#g-plot"), pr = $("#g-pr");
+  mount(plot, () => {
+    plot.replaceChildren();
+    const t = th(), W = Math.max(260, plot.clientWidth), H = Math.round(Math.min(400, Math.max(260, W * 0.6))), m = { l: 44, r: 14, t: 10, b: 44 };
+    const x = v => m.l + v * (W - m.l - m.r), y = v => m.t + (1 - v) * (H - m.t - m.b);
+    const svg = s("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "Candidates by support and confidence" });
+    for (let v = 0; v <= 1.0001; v += 0.2) {
+      const vv = +v.toFixed(1);
+      svg.append(s("line", { class: vv === 0 ? "axis" : "grid", x1: m.l, x2: W - m.r, y1: y(vv), y2: y(vv) }), s("line", { class: vv === 0 ? "axis" : "grid", y1: m.t, y2: H - m.b, x1: x(vv), x2: x(vv) }));
+      svg.append(s("text", { class: "tick", x: m.l - 6, y: y(vv), "text-anchor": "end", "dominant-baseline": "middle" }, vv.toFixed(1)));
+      svg.append(s("text", { class: "tick", x: x(vv), y: H - m.b + 15, "text-anchor": "middle" }, vv.toFixed(1)));
+    }
+    svg.append(s("text", { class: "alab", x: (m.l + W - m.r) / 2, y: H - 6, "text-anchor": "middle" }, "support: fuzzy match of the reading in CTC kana"));
+    svg.append(s("text", { class: "alab", transform: `translate(11 ${(m.t + H - m.b) / 2}) rotate(-90)`, "text-anchor": "middle" }, "CTC confidence"));
+    svg.append(s("rect", { class: "zone", x: x(t.s), y: y(1), width: Math.max(0, x(1) - x(t.s)), height: Math.max(0, y(t.c) - y(1)) }));
+    svg.append(s("line", { class: "thresh", x1: x(t.s), x2: x(t.s), y1: m.t, y2: H - m.b }), s("line", { class: "thresh", x1: m.l, x2: W - m.r, y1: y(t.c), y2: y(t.c) }));
+    const order = [...cs].sort((a, b) => pass(a, t) - pass(b, t));
+    const shape = (c, cx, cy, extra = {}) => c.correct
+      ? s("circle", { cx, cy, r: 4.5, ...extra })
+      : s("path", { d: `M${cx},${cy - 5.5} L${cx + 5.5},${cy} L${cx},${cy + 5.5} L${cx - 5.5},${cy} z`, ...extra });
+    for (const c of order) {
+      const on = pass(c, t), repOk = c.n_utt >= t.r;
+      svg.append(shape(c, x(c.support), y(c.conf), { style: `fill:${repOk ? (c.correct ? "var(--s1)" : "var(--s2)") : "var(--s0)"};stroke:var(--surface);stroke-width:1.5;opacity:${on ? 1 : repOk ? 0.5 : 0.3}` }));
+    }
+    const ring = s("g"); svg.append(ring);
+    svg.addEventListener("pointermove", e => {
+      const [px, py] = svgPoint(svg, e, W); let best = null, bd = 18 * 18;
+      for (const c of cs) { const dx = x(c.support) - px, dy = y(c.conf) - py, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = c; } }
+      ring.replaceChildren();
+      if (!best) { hideTip(); return; }
+      ring.append(s("circle", { cx: x(best.support), cy: y(best.conf), r: 9, style: "fill:none;stroke:var(--ink);stroke-width:1.5" }));
+      showTip(e.clientX, e.clientY, `${best.surface} · ${best.seq} t=${best.step}`, [
+        { value: fx(best.support, 3), label: "support" }, { value: fx(best.conf, 3), label: "confidence" },
+        { value: String(best.n_utt), label: "utterances" },
+        { value: best.correct ? "✓" : "✕", label: best.correct ? "surface in the reference" : "surface not in the reference" },
+        { value: pass(best, th()) ? "written" : "rejected", label: "at these thresholds" }]);
+    });
+    svg.addEventListener("pointerleave", () => { ring.replaceChildren(); hideTip(); });
+    plot.append(svg);
+  });
+  mount(pr, () => {
+    pr.replaceChildren();
+    const cur = stats(th()), W = Math.max(240, pr.clientWidth), H = Math.round(Math.min(340, Math.max(230, W * 0.8))), m = { l: 44, r: 14, t: 12, b: 44 };
+    const rmax = Math.min(1, niceScale(Math.max(cur.r, ...sweep.map(r => r.recall), 0.1)).max);
+    const xs = niceScale(rmax);
+    const x = v => m.l + v / xs.max * (W - m.l - m.r), y = v => m.t + (1 - v) * (H - m.t - m.b);
+    const svg = s("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "Precision against recall" });
+    for (let v = 0; v <= 1.0001; v += 0.25) { svg.append(s("line", { class: v === 0 ? "axis" : "grid", x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }), s("text", { class: "tick", x: m.l - 6, y: y(v), "text-anchor": "end", "dominant-baseline": "middle" }, v.toFixed(2))); }
+    for (const v of xs.ticks) { svg.append(s("line", { class: v === 0 ? "axis" : "grid", y1: m.t, y2: H - m.b, x1: x(v), x2: x(v) }), s("text", { class: "tick", x: x(v), y: H - m.b + 15, "text-anchor": "middle" }, v.toFixed(xs.dec))); }
+    svg.append(s("text", { class: "alab", x: (m.l + W - m.r) / 2, y: H - 6, "text-anchor": "middle" }, "recall"));
+    svg.append(s("text", { class: "alab", transform: `translate(11 ${(m.t + H - m.b) / 2}) rotate(-90)`, "text-anchor": "middle" }, "precision"));
+    const pts = sweep.filter(r => isNum(r.precision));
+    const front = [...pts].sort((a, b) => b.recall - a.recall || b.precision - a.precision).reduce((acc, r) => { if (!acc.length || r.precision > acc[acc.length - 1].precision) acc.push(r); return acc; }, []).sort((a, b) => a.recall - b.recall);
+    if (front.length > 1) svg.append(s("path", { class: "ln", d: front.map((r, i) => (i ? "L" : "M") + x(r.recall).toFixed(1) + "," + y(r.precision).toFixed(1)).join(""), style: "stroke:var(--s0);stroke-width:1.5;opacity:.7" }));
+    for (const r of pts) svg.append(s("circle", { cx: x(r.recall), cy: y(r.precision), r: 3.5, style: "fill:var(--s0);opacity:.6" }));
+    if (isNum(cur.p)) svg.append(s("circle", { class: "dot", cx: x(cur.r), cy: y(cur.p), r: 6, style: "fill:var(--accent)" }));
+    const ring = s("g"); svg.append(ring);
+    let hover = null;
+    svg.addEventListener("pointermove", e => {
+      const [px, py] = svgPoint(svg, e, W); let best = null, bd = 16 * 16;
+      for (const r of pts) { const dx = x(r.recall) - px, dy = y(r.precision) - py, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = r; } }
+      hover = best; ring.replaceChildren(); svg.style.cursor = best ? "pointer" : "default";
+      if (!best) { hideTip(); return; }
+      ring.append(s("circle", { cx: x(best.recall), cy: y(best.precision), r: 7, style: "fill:none;stroke:var(--ink);stroke-width:1.5" }));
+      showTip(e.clientX, e.clientY, `support ≥ ${best.min_support} · conf ≥ ${best.min_conf} · utterances ≥ ${best.min_repeat}`, [
+        { value: fx(best.precision), label: "precision" }, { value: fx(best.recall), label: "recall" }, { value: String(best.n_accepted), label: "written" }, { value: "click", label: "to load these thresholds" }]);
+    });
+    svg.addEventListener("pointerleave", () => { hover = null; ring.replaceChildren(); hideTip(); });
+    svg.addEventListener("click", () => { if (!hover) return; sup.value = hover.min_support; conf.value = hover.min_conf; rep.value = Math.max(+rep.min, Math.min(+rep.max, hover.min_repeat)); update(); });
+    pr.append(svg);
+    if (!pts.length) pr.append(h("p", { class: "src" }, `No sweep file for ${G.system}. Run scripts/sweep_write_gate.py --system ${G.system} to add the grid.`));
+  });
+  function update() {
+    const t = th(), st = stats(t);
+    $("#g-sup-o").textContent = t.s.toFixed(2); $("#g-conf-o").textContent = t.c.toFixed(2); $("#g-rep-o").textContent = String(t.r);
+    const tile = (l, v, d) => h("div", { class: "tile" }, h("div", { class: "l" }, l), h("div", { class: "v" }, v), h("div", { class: "d" }, d));
+    const def = stats({ s: w.min_support, c: w.min_conf, r: w.min_repeat });
+    $("#g-tiles").replaceChildren(
+      tile("Written to memory", `${st.n}`, `of ${cs.length} candidates`),
+      tile("Precision", pct(st.p), `config default: ${pct(def.p)}`),
+      tile("Recall", pct(st.r), `config default: ${pct(def.r)}`));
+    plot._draw(); pr._draw();
+  }
+  for (const el of [sup, conf, rep]) el.addEventListener("input", update);
+  $("#g-reset").addEventListener("click", reset);
+  reset();
+}
+
+/* ---------------------------------------------------------------- fuzzy matcher (mirrors matching/fuzzy.py) */
+const kanaKey = str => [...str.normalize("NFKC")].map(c => { const o = c.codePointAt(0); return o >= 0x30A1 && o <= 0x30F6 ? String.fromCodePoint(o - 0x60) : c; }).filter(c => { const o = c.codePointAt(0); return (o >= 0x3041 && o <= 0x3096) || c === "ー"; }).join("");
+function lcs(a, b) {
+  let prev = new Array(b.length + 1).fill(0), cur = new Array(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) { for (let j = 1; j <= b.length; j++) cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]); [prev, cur] = [cur, prev]; }
+  return prev[b.length];
+}
+const ratio = (a, b) => (a.length + b.length) ? 2 * lcs(a, b) / (a.length + b.length) : 1;
+function bestMatch(needle, hay, slack, mlf) {
+  const N = [...needle], H = [...hay], res = { score: 0, start: 0, end: 0, rows: [], mode: "fuzzy" };
+  if (!N.length || !H.length) { res.mode = "empty"; return res; }
+  for (let L = Math.max(1, N.length - slack); L <= N.length + slack; L++) {
+    const row = { L, cells: [] };
+    if (L > H.length) row.cells.push({ s: 0, e: H.length, r: ratio(N, H) });
+    else for (let st = 0; st + L <= H.length; st++) row.cells.push({ s: st, e: st + L, r: ratio(N, H.slice(st, st + L)) });
+    res.rows.push(row);
+  }
+  for (let i = 0; i + N.length <= H.length; i++) if (H.slice(i, i + N.length).join("") === needle) return Object.assign(res, { score: 1, start: i, end: i + N.length, mode: "exact" });
+  if (N.length < mlf) { res.mode = "short"; return res; }
+  for (const row of res.rows) for (const c of row.cells) if (c.r > res.score) Object.assign(res, { score: c.r, start: c.s, end: c.e });
+  return res;
+}
+function initFuzzy() {
+  const nd = $("#fz-needle"), hy = $("#fz-hay"), sl = $("#fz-slack"), out = $("#fz-out"), grid = $("#fz-grid");
+  const minScore = D?.defaults?.read?.min_score ?? 0.8, mlf = D?.defaults?.read?.min_len_fuzzy ?? 3;
+  const presets = [];
+  const T = D?.trace;
+  if (T) {
+    const all = T.seqs.flatMap(q => q.steps.flatMap(st => st.utts.map(u => ({ u, st }))));
+    const ex = all.find(({ u }) => u.ctc && u.offered.some(o => o.source === "memory" && o.score === 1));
+    const exO = ex?.u.offered.find(o => o.source === "memory" && o.score === 1);
+    if (exO) presets.push([`Exact: ${exO.surface}`, exO.reading, ex.u.ctc]);
+    const isFz = o => o.score < 1 && o.reading;
+    const fz = all.find(({ u }) => u.ctc && u.offered.some(o => isFz(o) && o.surface !== exO?.surface)) || all.find(({ u }) => u.ctc && u.offered.some(isFz));
+    if (fz) { const o = fz.u.offered.find(o => isFz(o) && o.surface !== exO?.surface) || fz.u.offered.find(isFz); presets.push([`Fuzzy: ${o.surface}`, o.reading, fz.u.ctc]); }
+    outer: for (const q of T.seqs) for (const st of q.steps) for (const d of st.decisions) {
+      if (d.accepted || !d.reason.includes("support")) continue;
+      const u = st.utts.find(u => u.ctc && u.hyp.includes(d.surface));
+      if (u) { presets.push([`Rejected: ${d.surface}`, d.reading, u.ctc]); break outer; }
+    }
+  }
+  if (!presets.length) presets.push(["Sample", "けっかんないひ", "じさけんではけかかんにろひのでーたをつかいました"]);
+  const btns = presets.map(([l, a, b]) => h("button", { type: "button", class: "chip", "aria-pressed": "false", onclick: () => { nd.value = a; hy.value = b; render(); } }, l));
+  $("#fz-presets").replaceChildren(...btns);
+  nd.value = presets[0][1]; hy.value = presets[0][2];
+  for (const el of [nd, hy, sl]) el.addEventListener("input", render);
+
+  function render() {
+    for (const [i, b] of btns.entries()) b.setAttribute("aria-pressed", String(nd.value === presets[i][1] && hy.value === presets[i][2]));
+    const a = kanaKey(nd.value), b = kanaKey(hy.value), H = [...b];
+    const r = bestMatch(a, b, +sl.value, mlf), ok = r.score >= minScore;
+    out.replaceChildren();
+    if (r.mode === "empty") { out.append(h("span", { class: "empty" }, "Type a reading and a CTC string (kana; katakana is folded to hiragana as in kana_key).")); grid.replaceChildren(); return; }
+    const win = H.slice(r.start, r.end).join("");
+    out.append(h("span", { class: "big" }, r.score.toFixed(3)),
+      h("span", null, r.mode === "exact" ? `exact substring at position ${r.start}` : r.mode === "short" ? `readings shorter than ${mlf} kana must match exactly` : `best window 「${win}」 at [${r.start}, ${r.end})`),
+      ok ? h("span", { class: "pill good" }, `✓ offered (≥ ${minScore})`) : h("span", { class: "pill bad" }, `✕ not offered (< ${minScore})`));
+    grid.style.gridTemplateColumns = `60px repeat(${H.length}, 26px)`;
+    const hayCells = H.map((c, i) => h("div", { class: "fz-c fz-hay" + (i >= r.start && i < r.end && r.score > 0 ? " win" : ""), style: `grid-row:1;grid-column:${i + 2}` }, c));
+    const kids = [h("div", { class: "fz-l", style: "grid-row:1;grid-column:1" }, "CTC"), ...hayCells];
+    r.rows.forEach((row, ri) => {
+      kids.push(h("div", { class: "fz-l", style: `grid-row:${ri + 2};grid-column:1` }, `len ${row.L}`));
+      for (const c of row.cells) {
+        const p = Math.round(c.r * 100), best = r.mode !== "short" && r.score > 0 && c.s === r.start && c.e === r.end && (r.mode !== "exact" || row.L === [...a].length);
+        const cell = h("div", { class: "fz-c fz-s" + (best ? " best" : ""), tabindex: 0,
+          style: `grid-row:${ri + 2};grid-column:${c.s + 2}${row.L > H.length ? ` / span ${H.length}` : ""};background:color-mix(in oklab, var(--s1) ${p}%, var(--sunk));color:${p > 55 ? "var(--on-fill)" : "var(--ink)"}` }, String(p));
+        const on = e => {
+          hayCells.forEach((hc, i) => hc.classList.toggle("hov", i >= c.s && i < c.e));
+          const rc = cell.getBoundingClientRect();
+          showTip(e?.clientX ?? rc.right, e?.clientY ?? rc.bottom, `window [${c.s}, ${c.e}) · length ${c.e - c.s}`, [{ value: c.r.toFixed(3), label: `「${H.slice(c.s, c.e).join("")}」 vs 「${a}」` }]);
+        };
+        const off = () => { hayCells.forEach(hc => hc.classList.remove("hov")); hideTip(); };
+        cell.addEventListener("pointerenter", on); cell.addEventListener("pointerleave", off);
+        cell.addEventListener("focus", () => on()); cell.addEventListener("blur", off);
+        kids.push(cell);
+      }
+    });
+    grid.replaceChildren(...kids);
+  }
+  render();
+}
+
+/* ---------------------------------------------------------------- systems matrix */
+function initSystems() {
+  const box = $("#sys-table");
+  if (!D?.systems || !Object.keys(D.systems).length) { box.replaceChildren(h("p", { class: "empty", style: "padding:16px" }, "No system definitions in the export.")); return; }
+  const ran = new Set(Object.values(D.exps).flatMap(e => e.systems));
+  const REP = { surface: "surface", surface_reading: "surface + reading", surface_reading_context: "+ context" };
+  const cols = [
+    ["Read", c => !c.read.enabled ? "off" : c.read.source === "oracle_session" ? "oracle list" : c.read.verify ? "verified" : "unverified"],
+    ["Top k", c => c.read.enabled ? (c.read.top_k ?? "all") : "–"],
+    ["Prompt entry", c => REP[c.read.representation] || c.read.representation],
+    ["Write gate", c => c.write.mode === "acoustic" ? "acoustic: " + [["S", "use_support"], ["C", "use_conf"], ["R", "use_repeat"]].filter(([, k]) => c.write[k]).map(([l]) => l).join("·") : c.write.mode],
+    ["Reading from", c => c.write.mode === "none" ? "–" : c.write.reading_source],
+    ["Memory", c => !c.memory.persist_across_sessions ? "per talk only" : c.memory.policy + (c.memory.policy !== "unbounded" ? ` · ${c.memory.max_size}` : "")],
+    ["Prune", c => c.memory.persist_across_sessions ? (c.memory.prune_on_contradiction ? "yes" : "no") : "–"],
+    ["Static list", c => c.use_static ? "yes" : "no"],
+  ];
+  const P = D.systems.P;
+  const names = Object.keys(D.systems).sort(sysSort);
+  const rows = []; let g0 = null;
+  for (const n of names) {
+    const g = groupOf(n);
+    if (g !== g0) { rows.push(h("tr", { class: "grp" }, h("td", { colspan: cols.length + 3 }, g))); g0 = g; }
+    const c = D.systems[n];
+    rows.push(h("tr", { class: n === "P" ? "hl" : null },
+      h("td", { style: "white-space:nowrap" }, h("b", null, n)),
+      cols.map(([, f]) => { const v = String(f(c)), d = P && n !== "P" && v !== String(f(P)); return h("td", { class: d ? "diff" : null, style: "white-space:nowrap" }, v); }),
+      h("td", { class: "num" }, ran.has(n) ? "✓" : ""),
+      h("td", { style: "min-width:260px;color:var(--ink-2)" }, SYS_DESC[n] || "Custom system.")));
+  }
+  box.replaceChildren(h("table", null,
+    h("thead", null, h("tr", null, h("th", null, "System"), cols.map(([t]) => h("th", null, t)), h("th", { class: "num", title: "present in this export" }, "Run"), h("th", null, "What it tests"))),
+    h("tbody", null, rows)));
+}
+
+/* ---------------------------------------------------------------- results */
+function initResults() {
+  const app = $("#results-app"), names = Object.keys(D?.exps || {});
+  if (!names.length) { app.replaceChildren(h("p", { class: "empty" }, "No evaluated experiments in the export.")); return; }
+  let exp = names[0], cmp = [];
+  const SLOTS = ["var(--s2)", "var(--s3)", "var(--s4)"], slot = {};
+  const avail = () => D.exps[exp].systems.filter(n => n !== "P" && n !== "B0").sort(sysSort);
+  const color = n => n === "P" ? "var(--s1)" : n === "B0" ? "var(--s0)" : slot[n] || "var(--muted)";
+  const label = n => n === "P" ? "P (proposed)" : n === "B0" ? "B0 (no biasing)" : n;
+  function fixSelection() {
+    cmp = cmp.filter(n => avail().includes(n));
+    for (const n of Object.keys(slot)) if (!cmp.includes(n)) delete slot[n];
+    if (!cmp.length) for (const n of ["B3", "B4", "P-noVerify", "B5"]) if (avail().includes(n) && cmp.length < 2) { cmp.push(n); slot[n] = SLOTS.find(c => !Object.values(slot).includes(c)); }
+  }
+  function controls() {
+    $("#rs-exp").replaceChildren(...names.map(n => h("button", { type: "button", "aria-pressed": String(n === exp), onclick: () => { exp = n; fixSelection(); controls(); drawAll(); } }, n)));
+    $("#rs-cmp").replaceChildren(...avail().map(n => {
+      const on = cmp.includes(n), full = !on && cmp.length >= 3;
+      return h("button", { type: "button", class: "chip", "aria-pressed": String(on), "aria-disabled": full ? "true" : null, title: full ? "Up to three at a time; remove one first" : SYS_DESC[n] || n,
+        onclick: () => {
+          if (on) { cmp = cmp.filter(x => x !== n); delete slot[n]; }
+          else if (!full) { cmp.push(n); slot[n] = SLOTS.find(c => !Object.values(slot).includes(c)); }
+          else return;
+          controls(); drawAll();
+        } }, on ? lineKey(color(n)) : null, n);
+    }));
+  }
+  const shown = () => ["P", "B0", ...cmp].filter(n => D.exps[exp].systems.includes(n));
+  function seriesFrom(rows, key, systems) {
+    return systems.map(n => ({ label: label(n), color: color(n), pts: rows.filter(r => r.system === n).map(r => ({ x: r.step, y: r[key] })) }));
+  }
+
+  function recurrence() {
+    const host = $("#rs-recur"), rows = D.go_nogo || [];
+    if (!rows.length) { host.replaceChildren(h("p", { class: "empty" }, "No go/no-go table. Run go_nogo.py with --out and export again.")); return; }
+    const groups = [...new Set(rows.map(r => r.sequences))];
+    const cs = ["var(--s3)", "var(--s4)", "var(--s2)"];
+    let k = 0; const col = Object.fromEntries(groups.map(g => [g, /random/i.test(g) ? "var(--s0)" : cs[k++ % cs.length]]));
+    const sf = key => groups.map(g => ({ label: g, color: col[g], pts: rows.filter(r => r.sequences === g).map(r => ({ x: r.step, y: r[key] })) }));
+    const metrics = [["type_recur", "Rare-word types seen before", "higher = more to remember"], ["token_recur", "Rare-word tokens seen before", "higher = more to remember"]];
+    const lg = h("div", { class: "legend", style: "margin-bottom:10px" }); legend(lg, groups.map(g => [col[g], g]));
+    const mh = h("div");
+    host.replaceChildren(lg, mh);
+    smallMultiples(mh, metrics, sf, { yMax: { type_recur: 1, token_recur: 1 } });
+    host.append(stepTable(metrics, sf));
+  }
+
+  function overall() {
+    const host = $("#rs-table"), rows = D.exps[exp].overall;
+    const cols = [["CER", "CER", -1], ["B-CER", "B-CER", -1], ["U-CER", "U-CER", -1], ["term_R", "Term recall", 1], ["term_P", "Term precision", 1], ["harmful", "Harmful", -1], ["induced_fp_per_1k", "Induced FP / 1k", -1]];
+    const max = Object.fromEntries(cols.map(([k]) => [k, Math.max(...rows.map(r => r[k]).filter(isNum), 1e-9)]));
+    const best = Object.fromEntries(cols.map(([k, , dir]) => { const v = rows.filter(r => !usesRef(r.system) && isNum(r[k])).map(r => r[k]); return [k, v.length ? (dir < 0 ? Math.min(...v) : Math.max(...v)) : null]; }));
+    let sortKey = host._sort?.k ?? null, sortDir = host._sort?.d ?? 1;
+    const render = () => {
+      const rs = [...rows].sort((a, b) => sortKey ? ((a[sortKey] ?? Infinity) - (b[sortKey] ?? Infinity)) * sortDir : sysSort(a.system, b.system));
+      const shownSet = new Set(shown());
+      host.replaceChildren(h("div", { class: "tbl-wrap" }, h("table", null,
+        h("thead", null, h("tr", null,
+          h("th", null, h("button", { type: "button", "data-dir": sortKey ? "" : "↓", onclick: () => { sortKey = null; sortDir = 1; host._sort = null; render(); } }, "System")),
+          cols.map(([k, t, dir]) => h("th", { class: "num", title: dir < 0 ? "lower is better" : "higher is better" }, h("button", { type: "button", "data-dir": sortKey === k ? (sortDir > 0 ? "↑" : "↓") : "", onclick: () => { sortDir = sortKey === k ? -sortDir : (dir < 0 ? 1 : -1); sortKey = k; host._sort = { k, d: sortDir }; render(); } }, t))))),
+        h("tbody", null, rs.map(r => h("tr", { class: r.system === "P" ? "hl" : null },
+          h("td", null, h("span", { style: "display:inline-flex;gap:8px;align-items:center" }, shownSet.has(r.system) ? lineKey(color(r.system)) : h("span", { style: "width:16px;display:inline-block" }), h("b", null, r.system), usesRef(r.system) ? h("span", { class: "pill mute", title: "uses the reference" }, "ref") : null)),
+          cols.map(([k]) => h("td", { class: "num" + (isNum(r[k]) && r[k] === best[k] && !usesRef(r.system) ? " best" : "") },
+            h("div", { class: "cellbar" }, h("span", null, k === "induced_fp_per_1k" ? fx(r[k], 1) : fx(r[k])), h("span", { class: "bar" }, h("i", { style: `width:${isNum(r[k]) ? r[k] / max[k] * 100 : 0}%` })))))))))));
+    };
+    render();
+  }
+
+  function steps() {
+    const rows = D.exps[exp].by_step, sys = shown();
+    legend($("#rs-legend"), sys.map(n => [color(n), label(n)]));
+    const metrics = [["B-CER", "Rare-span CER (B-CER)", "lower is better"], ["U-CER", "CER outside rare spans", "lower is better"], ["term_R", "Term recall", "higher is better"], ["term_P", "Term precision", "higher is better"]];
+    const sf = k => seriesFrom(rows, k, sys);
+    const host = $("#rs-steps"), mh = h("div"); host.replaceChildren(mh);
+    smallMultiples(mh, metrics, sf, { yMax: { term_R: 1, term_P: 1 } });
+    host.append(stepTable(metrics, sf));
+  }
+
+  function memory() {
+    const rows = D.exps[exp].memory_by_step, sys = shown().filter(n => n !== "B0");
+    const metrics = [["mem_size", "Entries in memory", "count"], ["mem_precision", "Memory precision", "higher is better"], ["coverage_next", "Coverage of the next talk", "higher is better"]];
+    if (rows.some(r => r.mem_poison > 0)) metrics.push(["mem_poison", "Poison entries alive", "lower is better"]);
+    const sf = k => seriesFrom(rows, k, sys);
+    const host = $("#rs-mem"), mh = h("div"); host.replaceChildren(mh);
+    smallMultiples(mh, metrics, sf, { yMax: { mem_precision: 1, coverage_next: 1 } });
+    host.append(h("p", { class: "src" }, "B0 keeps no memory and is left out here."), stepTable(metrics, sf));
+  }
+
+  function bootstrap() {
+    const host = $("#rs-boot"), rows = D.exps[exp].bootstrap;
+    host.replaceChildren();
+    if (!rows.length) { host.append(h("p", { class: "empty" }, "No bootstrap table for this experiment.")); return; }
+    const metrics = [...new Set(rows.map(r => r.metric))];
+    const grid = h("div", { class: "multi" }); host.append(grid);
+    for (const mt of metrics) {
+      const rs = rows.filter(r => r.metric === mt), c = h("div");
+      grid.append(h("div", { class: "panel mchart" }, h("div", { class: "mchart-h" }, h("h3", null, `Δ ${mt}`), h("small", null, "negative = P better")), c));
+      mount(c, () => {
+        c.replaceChildren();
+        const W = Math.max(260, c.clientWidth), rowH = 30, m = { l: 96, r: 14, t: 8, b: 30 }, H = m.t + m.b + rs.length * rowH;
+        let lo = Math.min(0, ...rs.map(r => r.ci_lo)), hi = Math.max(0, ...rs.map(r => r.ci_hi));
+        const pad = (hi - lo) * 0.08 || 0.01; lo -= pad; hi += pad;
+        const step = niceStep((hi - lo) / 5), dec = decimals(step);
+        const x = v => m.l + (v - lo) / (hi - lo) * (W - m.l - m.r);
+        const svg = s("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": `Bootstrap differences in ${mt}` });
+        for (let t = Math.ceil(lo / step) * step; t <= hi + 1e-12; t += step) {
+          const tv = +t.toFixed(10);
+          svg.append(s("line", { class: Math.abs(tv) < 1e-12 ? "axis" : "grid", x1: x(tv), x2: x(tv), y1: m.t, y2: H - m.b }), s("text", { class: "tick", x: x(tv), y: H - m.b + 15, "text-anchor": "middle" }, Math.abs(tv) < 1e-12 ? "0" : signed(tv, dec)));
+        }
+        rs.forEach((r, i) => {
+          const cy = m.t + i * rowH + rowH / 2, sig = r.ci_lo > 0 || r.ci_hi < 0;
+          const g = s("g", { tabindex: 0 });
+          g.append(s("rect", { x: 0, y: cy - rowH / 2, width: W, height: rowH, fill: "transparent" }),
+            s("text", { class: "rowlab", x: m.l - 10, y: cy, "text-anchor": "end", "dominant-baseline": "middle" }, r.compare.replace(/^P - /, "vs ")),
+            s("line", { class: "ci", x1: x(r.ci_lo), x2: x(r.ci_hi), y1: cy, y2: cy }),
+            s("circle", { cx: x(r.delta), cy, r: 5, style: sig ? "fill:var(--accent);stroke:var(--surface);stroke-width:2" : "fill:var(--surface);stroke:var(--accent);stroke-width:2" }));
+          const on = e => { const rc = g.getBoundingClientRect(); showTip(e?.clientX ?? rc.left + m.l, e?.clientY ?? rc.bottom, `${r.compare} · ${mt}`, [{ value: signed(r.delta, 4), label: "difference" }, { value: `${signed(r.ci_lo, 4)} to ${signed(r.ci_hi, 4)}`, label: "95% interval" }, { value: fx(r.p, 3), label: "p" }, { value: String(r.n_clusters), label: "talk clusters" }]); };
+          g.addEventListener("pointermove", on); g.addEventListener("pointerleave", hideTip);
+          g.addEventListener("focus", () => on()); g.addEventListener("blur", hideTip);
+          svg.append(g);
+        });
+        c.append(svg);
+      });
+    }
+    host.append(h("details", { class: "tv" }, h("summary", null, "Table view"), h("div", { class: "tbl-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["Comparison", "Metric", "Difference", "95% low", "95% high", "p", "Clusters"].map((t, i) => h("th", { class: i > 1 ? "num" : null }, t)))),
+      h("tbody", null, rows.map(r => h("tr", null, h("td", null, r.compare), h("td", null, r.metric), h("td", { class: "num" }, signed(r.delta, 4)), h("td", { class: "num" }, signed(r.ci_lo, 4)), h("td", { class: "num" }, signed(r.ci_hi, 4)), h("td", { class: "num" }, fx(r.p)), h("td", { class: "num" }, r.n_clusters))))))));
+  }
+
+  function drawAll() {
+    overall(); steps(); memory(); bootstrap();
+    $("#rs-src").replaceChildren(h("span", null, "Source: ", h("code", null, `${D.meta.runs_dir}/${exp}/eval/`), " (overall.csv, by_step.csv, memory_by_step.csv, bootstrap.csv)", D.go_nogo?.length ? [" and the go/no-go table of ", h("code", null, D.meta.config)] : null, "."));
+  }
+  fixSelection(); controls(); recurrence(); drawAll();
+}
+
+/* ---------------------------------------------------------------- code map */
+function initCode() {
+  const box = $("#code-table"), files = D?.code || [];
+  if (!files.length) { box.replaceChildren(h("p", { class: "empty", style: "padding:16px" }, "No code map in the export.")); return; }
+  const dirOf = p => p.split("/").slice(0, -1).join("/");
+  const dirs = [...new Set(files.map(f => dirOf(f.path)))].sort((a, b) => (a.startsWith("scripts") - b.startsWith("scripts")) || a.localeCompare(b));
+  const mx = Math.max(...files.map(f => f.lines));
+  $("#code-lead").textContent = `${files.length} modules, ${sum(files.map(f => f.lines)).toLocaleString("en")} lines of Python. Each with its line count and the first line of its docstring.`;
+  const rows = [];
+  for (const d of dirs) {
+    const fs = files.filter(f => dirOf(f.path) === d);
+    rows.push(h("tr", { class: "grp" }, h("td", { colspan: 3 }, `${d}/ · ${sum(fs.map(f => f.lines))} lines`)));
+    for (const f of fs) rows.push(h("tr", { class: "code-row" },
+      h("td", null, h("code", null, f.path.split("/").pop())),
+      h("td", { class: "num" }, h("div", { class: "lbar" }, h("span", null, f.lines), h("span", null, h("i", { style: `width:${f.lines / mx * 100}%` })))),
+      h("td", { class: "doc" }, f.doc || "")));
+  }
+  box.replaceChildren(h("table", null, h("thead", null, h("tr", null, h("th", null, "Module"), h("th", { class: "num" }, "Lines"), h("th", null, "Purpose"))), h("tbody", null, rows)));
+}
+
+for (const f of [renderProv, renderHeroExample, initDiagram, initReplay, initGate, initFuzzy, initSystems, initResults, initCode]) {
+  try { f(); } catch (e) { console.error(f.name, e); }
+}
+})();
+</script>
+</body>
+</html>

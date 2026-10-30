@@ -15,9 +15,10 @@ src/vagent/
   text/                    chuẩn hóa, fugashi/UniDic, định nghĩa từ hiếm (ngoài top-N của CSJ train)
   asr/                     interface CTCBackend/Decoder, HF kana-CTC, Whisper prompt, mock, cache
   eval/                    CER / B-CER / U-CER, term P/R, harmful change, memory quality, bootstrap
-scripts/                   prepare → vocab → sequences → go/no-go → run → evaluate → sweep / poison
+scripts/                   prepare → vocab → sequences → go/no-go → run → evaluate → sweep / poison → export
 configs/base.yaml          CSJ thật + định nghĩa toàn bộ system (B0–B5, P, ablation)
 configs/toy.yaml           smoke test với mock backend
+site/                      website trực quan hóa (index.html + data/results.js)
 ```
 
 ## Cài đặt & kiểm tra nhanh
@@ -90,6 +91,22 @@ Override nhanh từ CLI: `-o agent.read.top_k=50 backends.decoder.kwargs.num_bea
 - Memory sau mỗi phiên: `mem_precision` (entry có thực sự được nói ở các phiên ≤ t), `mem_poison`
   (số entry poison còn sống), `coverage_next` (tỉ lệ từ hiếm của phiên t+1 đã có trong memory).
 - `bootstrap.csv`: paired bootstrap theo cụm phiên (seq, perm, step).
+
+## Website trực quan hóa
+
+`site/index.html` là một trang tĩnh (không cần build, mở trực tiếp được cả từ `file://`) trình bày dự án:
+sơ đồ vòng lặp agent (bấm vào từng khối để xem file và tham số), replay từng phiên (memory sau mỗi talk,
+quyết định của cổng ghi, từng utterance B0 so với P), playground chỉnh ngưỡng cổng ghi trên các ứng viên đã log,
+demo fuzzy match trên kana, bảng system, kết quả đánh giá và bản đồ code. Dữ liệu nằm trong
+`site/data/results.js`, sinh từ thư mục `runs/` sau khi đã chạy `evaluate.py` (và `sweep_write_gate.py`):
+
+```bash
+python scripts/export_site_data.py --config configs/toy.yaml --exps main poison    # sau ./run_toy.sh
+python scripts/export_site_data.py --config $C --exps main poison                  # số liệu CSJ thật
+```
+Bản commit sẵn dùng dữ liệu toy (mock backend), nên các con số chỉ để minh họa; trang tự ghi rõ điều này.
+Replay mặc định là `P` so với `B0` (`--trace-system`, `--trace-baseline`); go/no-go được đọc từ
+`<work_dir>/go_nogo.csv` (`go_nogo.py --out`).
 
 ## Gắn pipeline của bạn
 
