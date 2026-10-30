@@ -1,0 +1,17 @@
+[project]
+name = "vagent"
+version = "0.1.0"
+description = "Training-free cross-session rare-word memory for Japanese ASR (CSJ experiments)"
+requires-python = ">=3.10"
+dependencies = ["numpy", "pyyaml", "Levenshtein", "fugashi", "unidic-lite"]
+
+[project.optional-dependencies]
+asr = ["torch", "torchaudio", "transformers>=4.40", "soundfile"]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

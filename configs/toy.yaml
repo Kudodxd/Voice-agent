@@ -1,0 +1,16 @@
+# Synthetic smoke test with reference-based mock backends (no audio, no GPU). Sanity check only.
+_base_: base.yaml
+paths: {work_dir: work/toy, cache_dir: work/toy/cache, runs_dir: runs_toy}
+data:
+  train_manifest: work/toy/train.jsonl
+  eval_manifest: work/toy/sessions.jsonl
+  text_field: text
+  metadata: work/toy/talk_meta.tsv
+  static_list: work/toy/static_hotwords.tsv
+rare:
+  vocab_path: work/toy/rare/vocab.tsv
+  common_path: work/toy/rare/common.txt
+  top_n: 300
+backends:
+  ctc: {_replace_: true, type: mock, cache_tag: mock_ctc, kwargs: {err_rate: 0.08, seed: 0}}
+  decoder: {_replace_: true, type: mock, cache_tag: mock_dec, kwargs: {p_base: 0.3, p_fix: 0.9, p_false: 0.03, seed: 0}}

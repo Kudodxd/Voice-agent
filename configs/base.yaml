@@ -1,0 +1,120 @@
+# ---------------------------------------------------------------- CSJ experiments (real backends)
+paths:
+  work_dir: work/csj
+  cache_dir: work/csj/cache        # CTC / decoder output caches (reused across systems)
+  runs_dir: runs
+
+data:
+  train_manifest: work/csj/manifests/train_nodup.jsonl   # only for the rare-word definition
+  eval_manifest: work/csj/manifests/sessions.jsonl       # talks used as sessions (see README: leakage)
+  text_field: text            # text | text_nofiller | <your whisper_like_clean field>
+  metadata: work/csj/talk_meta.tsv                        # talk_id<TAB>speaker<TAB>domain
+  static_list: work/csj/static_hotwords.tsv              # surface[<TAB>reading]  (B1, Exp4)
+
+tokenizer:
+  mecab_args: ""              # "" = unidic-lite; full UniDic: "-d /path/to/unidic"
+
+rare:
+  vocab_path: work/csj/rare/vocab.tsv
+  common_path: work/csj/rare/common_top5000.txt
+  top_n: 5000
+  content_pos: [名詞]
+  exclude_pos2: [数詞]
+  merge_pos: [名詞, 接頭辞, 接尾辞]
+  merge_compounds: true       # 音声+認識 -> 音声認識
+  min_chars: 2
+  exclude_hiragana_only: true
+
+backends:
+  ctc:                        # kana CTC used for verification / write support (cached, hotword-free)
+    type: hf                  # hf | external | mock | none
+    cache_tag: wavlm_kana_ctc
+    kwargs: {model: /path/to/wavlm-kana-ctc, device: cuda}
+  decoder:
+    type: whisper_prompt      # whisper_prompt | external | mock
+    cache_tag: whisper_medium_prompt
+    kwargs: {model: openai/whisper-medium, device: cuda, dtype: float16, language: ja, num_beams: 1,
+             prompt_style: list}
+    # your speech LLM (WavLM/Whisper enc + LLM, hotword prompt + concat embedding):
+    # type: external
+    # class: mypkg.speechllm:MySpeechLLMDecoder
+    # cache_tag: speechllm_v1
+    # kwargs: {ckpt: /path/to/ckpt, prompt_style: with_reading}
+
+# ---------------------------------------------------------------- default agent = proposed system P
+agent:
+  use_static: false
+  read:
+    enabled: true
+    source: memory            # memory | oracle_session
+    verify: true              # acoustic verification at read time (kana-CTC match)
+    verify_static: true
+    min_score: 0.8
+    top_k: 30
+    representation: surface_reading   # surface | surface_reading | surface_reading_context
+    slack: 1
+    min_len_fuzzy: 3
+  write:
+    mode: acoustic            # none | text_freq | glossary | acoustic | label
+    use_support: true
+    use_conf: true
+    use_repeat: true
+    min_support: 0.85
+    min_conf: 0.6
+    min_repeat: 2
+    agg: mean
+    reading_source: ctc       # ctc (acoustic reading of matched window) | mecab
+    confirm_threshold: 0.9    # read-time feedback: emitted entry counts as confirmed if CTC support >= this
+    context_chars: 8
+    glossary_max: 50
+  memory:
+    persist_across_sessions: true
+    policy: confidence        # unbounded | lru | decay | confidence
+    max_size: 200
+    decay_gamma: 0.8
+    min_weight: 0.2
+    prune_on_contradiction: true
+    contradiction_margin: 2
+    evidence_lambda: 1.0
+
+# ---------------------------------------------------------------- systems (overrides of `agent`)
+systems:
+  B0:   # no biasing
+    read: {enabled: false}
+    write: {mode: none}
+    memory: {persist_across_sessions: false}
+  B1:   # current static list (CTC-filtered)
+    use_static: true
+    write: {mode: none}
+    memory: {persist_across_sessions: false}
+  B2:   # in-session glossary, two-pass, frequency (ASR-GLOSSARY-like), no persistence
+    read: {verify: false}
+    write: {mode: glossary, min_repeat: 2}
+    memory: {persist_across_sessions: false}
+  B3:   # naive text-only memory: write every frequent candidate, unverified read
+    read: {verify: false}
+    write: {mode: text_freq, min_repeat: 2}
+    memory: {policy: unbounded, prune_on_contradiction: false}
+  B4:   # label-gated write (uses the session reference) -> ceiling of the write policy
+    write: {mode: label}
+  B5:   # oracle list = rare words of the current session reference
+    read: {source: oracle_session, verify: false, top_k: null}
+    write: {mode: none}
+    memory: {persist_across_sessions: false}
+  P: {}
+
+  # ---- Exp1: write-signal ablations
+  P-noSupport: {write: {use_support: false}}
+  P-noConf:    {write: {use_conf: false}}
+  P-noRepeat:  {write: {use_repeat: false}}
+  # ---- Exp2: read verification / capacity / forgetting
+  P-noVerify:  {read: {verify: false}}
+  P-unbounded: {memory: {policy: unbounded, prune_on_contradiction: false}}
+  P-lru:       {memory: {policy: lru, max_size: 100}}
+  P-decay:     {memory: {policy: decay}}
+  # ---- Exp3: representation
+  P-surface:   {read: {representation: surface}, write: {reading_source: mecab}}
+  P-mecabRead: {write: {reading_source: mecab}}
+  P-context:   {read: {representation: surface_reading_context}}
+  # ---- Exp4: static + dynamic
+  P+static:    {use_static: true}
