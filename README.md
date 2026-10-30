@@ -97,7 +97,9 @@ Override nhanh từ CLI: `-o agent.read.top_k=50 backends.decoder.kwargs.num_bea
 `site/index.html` là một trang tĩnh (không cần build, mở trực tiếp được cả từ `file://`) trình bày dự án:
 sơ đồ vòng lặp agent (bấm vào từng khối để xem file và tham số), replay từng phiên (memory sau mỗi talk,
 quyết định của cổng ghi, từng utterance B0 so với P), playground chỉnh ngưỡng cổng ghi trên các ứng viên đã log,
-demo fuzzy match trên kana, bảng system, kết quả đánh giá và bản đồ code. Dữ liệu nằm trong
+demo fuzzy match trên kana, bảng system, kết quả đánh giá và bản đồ code. Nút ở góc trên bên phải chuyển
+ngôn ngữ (English / Tiếng Việt / 日本語); lựa chọn được lưu trong trình duyệt, lần đầu theo ngôn ngữ của trình duyệt.
+Dữ liệu nằm trong
 `site/data/results.js`, sinh từ thư mục `runs/` sau khi đã chạy `evaluate.py` (và `sweep_write_gate.py`):
 
 ```bash
